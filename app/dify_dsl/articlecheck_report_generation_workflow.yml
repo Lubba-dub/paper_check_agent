@@ -1,0 +1,309 @@
+app:
+  description: 聚合格式审改、文献核验与幻觉审查结果，生成审计式报告差量 JSON
+  icon: "\U0001F4DD"
+  icon_background: '#F2E8FF'
+  icon_type: emoji
+  mode: workflow
+  name: ArticleCheck 报告生成工作流
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.4.3@84d4aae2c55724f6cdaecfadceed061d7e6b6693ae8945ea2dcd155f280743ef
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 50
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1719004001001-source-1719004002001-target
+      source: '1719004001001'
+      sourceHandle: source
+      target: '1719004002001'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        sourceType: llm
+        targetType: end
+      id: 1719004002001-source-1719004003001-target
+      source: '1719004002001'
+      sourceHandle: source
+      target: '1719004003001'
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 接收格式审改、幻觉审查与文档上下文，生成可被 FastAPI 聚合的报告差量
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: paper_profile_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: paper_profile_json
+        - label: format_review_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: format_review_json
+        - label: hallucination_review_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: hallucination_review_json
+        - label: review_context_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: review_context_json
+        - label: reference_review_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: reference_review_json
+        - label: section_digest_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: section_digest_json
+        - label: evidence_index_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: evidence_index_json
+        - label: 详细模式
+          max_length: 48
+          options:
+          - 'True'
+          - 'False'
+          required: true
+          type: select
+          variable: detailed_mode
+        - label: 报告风格或重点
+          max_length: 96
+          options: []
+          required: false
+          type: text-input
+          variable: report_focus
+      height: 396
+      id: '1719004001001'
+      position:
+        x: 80
+        y: 140
+      positionAbsolute:
+        x: 80
+        y: 140
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 生成执行摘要、审改发现、证据卡片与修订行动 JSON
+        model:
+          completion_params:
+            temperature: 0.2
+            top_p: 1
+            max_tokens: 4000
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - role: system
+          text: |-
+            你是论文审查报告生成助手。
+            你的任务是把格式审改、参考文献核验和幻觉审查结果汇总成可被 FastAPI 聚合为 article_check.ai_review.v1 的报告差量对象。
+
+            只输出 JSON，不要输出解释。
+            不得杜撰不存在的问题。
+
+            当 detailed_mode=False 时，顶层字段必须包含：
+            - executive_summary
+            - priority_actions
+            - findings
+            - evidence_records
+            - meta_delta
+            - question_router_hints
+
+            当 detailed_mode=True 时，额外增加：
+            - section_reports
+            - revision_plan
+            - risk_matrix
+            - publication_readiness
+            - qa_seed_questions
+            - workflow_trace
+
+            说明：
+            1. findings 用于统一问题列表，按严重程度排序。
+            2. evidence_records 用于证据卡片，优先引用格式审改、文献核验和幻觉审查中的已有证据。
+            3. priority_actions 用于修订行动清单。
+            4. meta_delta 中可以输出 overall_score、risk_level、review_focus。
+            5. 如果 report_focus 不为空，需要在 executive_summary 与 priority_actions 中体现。
+            6. question_router_hints 用于后续报告问答智能体进行问题分流，例如总览、证据追问、引用追问、修订建议。
+            7. 如果 evidence_index_json 中存在可复用锚点，evidence_records 必须优先复用对应 anchor_id，不要重新发明随机 evidence_id。
+            8. 每个 evidence_record 应尽量包含：
+               - evidence_id
+               - stage
+               - source_type
+               - claim
+               - severity
+               - location
+               - evidence_span
+               - quoted_text
+               - suggestion
+            9. evidence_span 应优先输出结构化对象，字段尽量包含：
+               - anchor_id
+               - block_id
+               - page
+               - paragraph_index
+               - locator
+               - text_excerpt
+            10. location 必须优先输出结构化对象，而不是自然语言字符串；已知时尽量包含 page、line、section、paragraph_index。
+            11. quoted_text 应优先复用 evidence_index_json.locator 或上游 issue/evidence 中的原文短摘录，不要杜撰不存在的原文。
+            12. findings、section_reports 与 revision_plan 中若引用某条证据，尽量保持 evidence_id / evidence_span 一致，避免同一问题出现多套锚点编号。
+        - role: user
+          text: |-
+            paper_profile_json:
+            {{#1719004001001.paper_profile_json#}}
+
+            format_review_json:
+            {{#1719004001001.format_review_json#}}
+
+            hallucination_review_json:
+            {{#1719004001001.hallucination_review_json#}}
+
+            review_context_json:
+            {{#1719004001001.review_context_json#}}
+
+            reference_review_json:
+            {{#1719004001001.reference_review_json#}}
+
+            section_digest_json:
+            {{#1719004001001.section_digest_json#}}
+
+            evidence_index_json:
+            {{#1719004001001.evidence_index_json#}}
+
+            detailed_mode:
+            {{#1719004001001.detailed_mode#}}
+
+            report_focus:
+            {{#1719004001001.report_focus#}}
+
+            请输出报告差量 JSON。
+        selected: false
+        structured_output_enabled: false
+        title: 报告汇总生成
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 120
+      id: '1719004002001'
+      position:
+        x: 410
+        y: 180
+      positionAbsolute:
+        x: 410
+        y: 180
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 返回报告差量对象
+        outputs:
+        - value_selector:
+          - '1719004002001'
+          - text
+          variable: report_generation_json
+        selected: false
+        title: 结束
+        type: end
+      height: 92
+      id: '1719004003001'
+      position:
+        x: 730
+        y: 195
+      positionAbsolute:
+        x: 730
+        y: 195
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.85
+  rag_pipeline_variables: []

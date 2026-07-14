@@ -1,0 +1,206 @@
+{
+  "institution": "北京师范大学",
+  "education_level": "graduate",
+  "document_family": "degree_thesis",
+  "profile_type": "requirement_rule_profile",
+  "template_name": "北京师范大学研究生学位论文编写规则（2026版）",
+  "source_document": "1. 北京师范大学研究生学位论文编写规则（2026版）.pdf",
+  "issuing_department": "北京师范大学学位评定委员会办公室",
+  "issue_date": "2026-01",
+  "normative_basis": [
+    "GB/T 7713.1-2025",
+    "GB/T 7714"
+  ],
+  "language_rules": {
+    "default_language": "zh-CN",
+    "allow_foreign_language_thesis": true,
+    "foreign_language_thesis_require_chinese_title": true,
+    "foreign_language_thesis_require_chinese_abstract": true,
+    "require_simplified_chinese": true,
+    "require_legal_units": true,
+    "terms_symbols_must_be_consistent": true
+  },
+  "document_structure": {
+    "required_sections": [
+      "封面",
+      "题名页",
+      "版权页",
+      "中文摘要",
+      "外文摘要",
+      "关键词",
+      "目录",
+      "正文",
+      "参考文献"
+    ],
+    "conditional_required_sections": [
+      "图表清单及主要符号对照表（有则必备）"
+    ],
+    "optional_sections": [
+      "附录",
+      "索引",
+      "攻读学位期间取得的学位论文相关成果",
+      "致谢",
+      "后记或说明",
+      "答辩委员会名单"
+    ]
+  },
+  "title_rules": {
+    "max_chinese_chars": 25,
+    "cover_title_font_family": "黑体",
+    "cover_title_font_size": "小二号",
+    "cover_title_bold": true,
+    "cover_title_centered": true,
+    "cover_title_line_spacing": 1.25
+  },
+  "abstract_rules": {
+    "doctoral_zh_target_chars": 2000,
+    "master_zh_target_chars": 1000,
+    "foreign_language_thesis_zh_min_chars": 5000,
+    "should_include": [
+      "研究目的",
+      "研究方法",
+      "研究结果",
+      "研究结论",
+      "创新点"
+    ],
+    "forbid": [
+      "图",
+      "表",
+      "化学结构式",
+      "非公知公用的符号和术语"
+    ],
+    "zh_body_font_family": "宋体",
+    "zh_body_font_size": "小四号",
+    "zh_line_spacing_pt": 20,
+    "en_body_font_family": "Times New Roman",
+    "en_body_font_size": "小四号",
+    "en_line_spacing_pt": 20
+  },
+  "keyword_rules": {
+    "min_keywords": 3,
+    "max_keywords": 8,
+    "zh_separator": "comma",
+    "en_separator": "half_width_comma",
+    "require_english_keywords": true
+  },
+  "page_layout": {
+    "cover_paper_size": "A3",
+    "inner_paper_size": "A4",
+    "print_mode": "double-sided_except_cover_and_copyright",
+    "body_margin_top_cm": 2.54,
+    "body_margin_bottom_cm": 2.54,
+    "body_margin_left_cm": 3.17,
+    "body_margin_right_cm": 3.17,
+    "body_line_spacing_pt": 20,
+    "formula_line_spacing_multiple": 1.5
+  },
+  "page_number_rules": {
+    "front_matter_numbering": "Roman",
+    "body_numbering": "Arabic",
+    "position": "bottom_center",
+    "front_matter_start": "摘要",
+    "body_start": "绪论或引言"
+  },
+  "font_rules": {
+    "cover_meta": {
+      "font_family": "宋体",
+      "font_size": "四号",
+      "bold": true
+    },
+    "catalog_title": {
+      "font_family": "黑体",
+      "font_size": "小二号"
+    },
+    "catalog_level_1": {
+      "font_family": "宋体",
+      "font_size": "小四号",
+      "bold": true,
+      "line_spacing_pt": 18
+    },
+    "body": {
+      "font_family": "宋体",
+      "font_size": "小四号"
+    },
+    "body_en": {
+      "font_family": "Times New Roman",
+      "font_size": "小四号"
+    },
+    "reference_body": {
+      "font_family": "宋体",
+      "font_size": "五号",
+      "line_spacing_pt": 16
+    }
+  },
+  "heading_rules": {
+    "allow_patterns": [
+      "第1章",
+      "1.1",
+      "1.1.1",
+      "1.1.1.1",
+      "第一章",
+      "第一节",
+      "一、",
+      "（一）"
+    ],
+    "chapter": {
+      "font_family": "黑体",
+      "font_size": "三号",
+      "bold": true,
+      "alignment": "center"
+    },
+    "section": {
+      "font_family": "黑体",
+      "font_size": "小三号",
+      "bold": true
+    },
+    "article": {
+      "font_family": "黑体",
+      "font_size": "四号",
+      "bold": true
+    },
+    "subarticle": {
+      "font_family": "黑体",
+      "font_size": "小四号",
+      "bold": true
+    }
+  },
+  "figure_table_formula_rules": {
+    "figure_numbering": "图1, 图2, ...",
+    "figure_caption_position": "below",
+    "figure_caption_font": "宋体 五号",
+    "table_numbering": "表1, 表2, ...",
+    "table_caption_position": "above",
+    "table_caption_font": "宋体 五号",
+    "formula_numbering": "式（2-13）",
+    "formula_alignment": "center",
+    "formula_number_position": "right",
+    "footnote_font": "宋体 小五号"
+  },
+  "reference_rules": {
+    "standard": "GB/T 7714",
+    "allowed_styles": [
+      "顺序编码制",
+      "著者-出版年制"
+    ],
+    "must_use_single_style_globally": true,
+    "cited_references_must_be_listed": true,
+    "uncited_readings_can_go_to_appendix": true,
+    "reference_section_new_page": true
+  },
+  "appendix_rules": {
+    "appendix_optional": true,
+    "appendix_sequence": [
+      "附录A",
+      "附录B",
+      "附录C"
+    ],
+    "appendix_content_font_family": "宋体",
+    "appendix_content_font_size": "小四号",
+    "appendix_line_spacing_pt": 20
+  },
+  "final_sections": {
+    "research_outputs_required_if_any": true,
+    "acknowledgement_allowed": true,
+    "defense_committee_list_allowed": true
+  }
+}

@@ -1,0 +1,60 @@
+# ==========================================================
+# Docker 构建忽略 — 减小镜像体积
+# ==========================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# Node / 前端
+node_modules/
+article_check/web/frontend/node_modules/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+
+# 运行时数据（由 volume 管理）
+reports/*
+uploads/*
+.worktrees/*
+!reports/.gitkeep
+!uploads/.gitkeep
+
+# 文档和设计
+docs/
+*.pptx
+*.md
+!README.md
+!dify_api.example.md
+
+# 本地配置
+.env
+*.local
+dify_api.md
+.dbg/
+.trae/
+
+# 测试
+tests/
+test_fixtures/
+__pycache__/
+
+# 参考仓库（构建不需要）
+repos/
+scripts/
+temp_batch/
+
+# Docker 自身
+.dockerignore
+docker-compose*.yml
+Dockerfile

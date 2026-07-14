@@ -1,0 +1,278 @@
+app:
+  description: 对参考文献核验结果进行结构化归纳，输出保守审计式引文风险摘要
+  icon: "\U0001F4DA"
+  icon_background: '#E8FFF8'
+  icon_type: emoji
+  mode: workflow
+  name: ArticleCheck 参考文献核验工作流
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.4.3@84d4aae2c55724f6cdaecfadceed061d7e6b6693ae8945ea2dcd155f280743ef
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 50
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1719005001001-source-1719005002001-target
+      source: '1719005001001'
+      sourceHandle: source
+      target: '1719005002001'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        sourceType: llm
+        targetType: end
+      id: 1719005002001-source-1719005003001-target
+      source: '1719005002001'
+      sourceHandle: source
+      target: '1719005003001'
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 接收外部文献核验结果，对引用质量进行结构化归纳
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: paper_profile_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: paper_profile_json
+        - label: reference_verify_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: reference_verify_json
+        - label: review_context_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: review_context_json
+        - label: section_digest_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: section_digest_json
+        - label: evidence_index_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: evidence_index_json
+        - label: 详细模式
+          max_length: 48
+          options:
+          - 'True'
+          - 'False'
+          required: true
+          type: select
+          variable: detailed_mode
+        - label: 审查焦点
+          max_length: 96
+          options: []
+          required: false
+          type: text-input
+          variable: review_focus
+      height: 308
+      id: '1719005001001'
+      position:
+        x: 80
+        y: 140
+      positionAbsolute:
+        x: 80
+        y: 140
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 输出参考文献质量、可疑引文与待人工复核项的结构化摘要
+        model:
+          completion_params:
+            temperature: 0.1
+            top_p: 1
+            max_tokens: 3200
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - role: system
+          text: |-
+            你是参考文献核验结果归纳助手。
+            你需要根据 reference_verify_json 归纳文献质量风险，并输出严格 JSON。
+
+            只输出 JSON，不要输出解释。
+
+            当 detailed_mode=False 时，顶层字段必须包含：
+            - summary
+            - reference_quality
+            - suspicious_references
+            - recommended_actions
+            - meta
+
+            当 detailed_mode=True 时，额外增加：
+            - citation_coverage
+            - mismatch_records
+            - pending_manual_checks
+            - evidence_records
+            - handoff_to_hallucination
+            - citation_map
+            - workflow_trace
+
+            规则：
+            1. 不要虚构命中结果、DOI、作者、年份或来源。
+            2. 如果某条文献没有外部命中，只能说“待人工复核”或“核验失败”，不要说该文献必定伪造。
+            3. suspicious_references 用于高风险或明显不一致条目。
+            4. pending_manual_checks 用于证据不足但值得复核的条目。
+            5. recommended_actions 应为字符串数组。
+            6. 如果 review_focus 不为空，需要优先覆盖相关引文、章节或作者群。
+            7. 如果输出 suspicious_references、pending_manual_checks 或 evidence_records 中的对象项，应尽量补充结构化 location 与 evidence_span。
+            8. evidence_span 尽量包含：
+               - anchor_id
+               - block_id
+               - page
+               - paragraph_index
+               - locator
+               - text_excerpt
+            9. location 优先输出结构化对象，已知时尽量包含 page、line、section、paragraph_index，而不是仅输出一句说明文字。
+        - role: user
+          text: |-
+            paper_profile_json:
+            {{#1719005001001.paper_profile_json#}}
+
+            reference_verify_json:
+            {{#1719005001001.reference_verify_json#}}
+
+            review_context_json:
+            {{#1719005001001.review_context_json#}}
+
+            section_digest_json:
+            {{#1719005001001.section_digest_json#}}
+
+            evidence_index_json:
+            {{#1719005001001.evidence_index_json#}}
+
+            detailed_mode:
+            {{#1719005001001.detailed_mode#}}
+
+            review_focus:
+            {{#1719005001001.review_focus#}}
+
+            请输出参考文献核验归纳 JSON。
+        selected: false
+        structured_output_enabled: false
+        title: 引文核验归纳
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 120
+      id: '1719005002001'
+      position:
+        x: 410
+        y: 180
+      positionAbsolute:
+        x: 410
+        y: 180
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 返回文献核验归纳结果
+        outputs:
+        - value_selector:
+          - '1719005002001'
+          - text
+          variable: reference_review_json
+        selected: false
+        title: 结束
+        type: end
+      height: 92
+      id: '1719005003001'
+      position:
+        x: 730
+        y: 195
+      positionAbsolute:
+        x: 730
+        y: 195
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.85
+  rag_pipeline_variables: []

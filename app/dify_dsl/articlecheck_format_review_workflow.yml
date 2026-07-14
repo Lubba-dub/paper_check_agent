@@ -1,0 +1,334 @@
+app:
+  description: 基于解析后的论文对象、模板规则与格式要求生成结构化格式审改结果
+  icon: "\U0001F4CF"
+  icon_background: '#EAFBF0'
+  icon_type: emoji
+  mode: workflow
+  name: ArticleCheck 格式审改工作流
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.4.3@84d4aae2c55724f6cdaecfadceed061d7e6b6693ae8945ea2dcd155f280743ef
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 50
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1719002001001-source-1719002002001-target
+      source: '1719002001001'
+      sourceHandle: source
+      target: '1719002002001'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        sourceType: llm
+        targetType: end
+      id: 1719002002001-source-1719002003001-target
+      source: '1719002002001'
+      sourceHandle: source
+      target: '1719002003001'
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 接收由文档读取工作流输出的统一上下文与规则对象
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: paper_profile_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: paper_profile_json
+        - label: template_rule_profile_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: template_rule_profile_json
+        - label: requirement_rule_profile_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: requirement_rule_profile_json
+        - label: review_context_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: review_context_json
+        - label: format_policy_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: format_policy_json
+        - label: section_digest_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: section_digest_json
+        - label: evidence_index_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: evidence_index_json
+        - label: risk_hints_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: risk_hints_json
+        - label: 详细模式
+          max_length: 48
+          options:
+          - 'True'
+          - 'False'
+          required: true
+          type: select
+          variable: detailed_mode
+        - label: 审查焦点
+          max_length: 96
+          options: []
+          required: false
+          type: text-input
+          variable: review_focus
+      height: 420
+      id: '1719002001001'
+      position:
+        x: 80
+        y: 140
+      positionAbsolute:
+        x: 80
+        y: 140
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 融合确定性指标与语义规则，输出结构化格式问题清单
+        model:
+          completion_params:
+            temperature: 0.1
+            top_p: 1
+            max_tokens: 4000
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - role: system
+          text: |-
+            你是论文格式审改专家。
+            你需要根据论文解析结果、模板规则、格式规范和审查上下文，输出结构化格式审改 JSON。
+
+            当前项目约定：
+            1. `template_rule_profile_json` 与 `requirement_rule_profile_json` 的权威来源，优先来自工作区内的北京师范大学格式规范文件解析结果。
+            2. 当前优先参考的规则文档包括：
+               - `北师大论文格式要求/北京师范大学本科生学术论文规范.pdf`
+               - `北师大论文格式要求/1. 北京师范大学研究生学位论文编写规则（2026版）.pdf`
+            3. 当前对应的结构化规则 JSON 基线包括：
+               - `北师大论文格式要求/bnu_undergraduate_template_rule_profile.json`
+               - `北师大论文格式要求/bnu_graduate_requirement_rule_profile.json`
+            4. 如果模板规则、格式要求规则与论文当前写法冲突，应以这两份规则文档解析出的结构化规则为最高优先级。
+            5. 如果 `template_rule_profile_json` 或 `requirement_rule_profile_json` 已经是结构化 JSON，必须优先按字段判断，不要把明确规则弱化成泛化文字总结。
+
+            判断原则：
+            1. layout_metrics、style_metrics、page_metrics 等确定性指标优先作为强证据。
+            2. 章节缺失、标题层级异常、摘要不规范、图表说明不充分、目录不完整等属于语义格式问题。
+            3. 不要虚构页码、行号、字号、边距或模板规则。
+            4. 如果 review_focus 不为空，需要优先覆盖相关区域。
+            5. 只输出 JSON，不要输出解释。
+
+            当 detailed_mode=False 时，输出 JSON 顶层字段必须包含：
+            - score
+            - summary
+            - issues
+            - pass_items
+            - meta
+
+            当 detailed_mode=True 时，额外增加：
+            - issue_groups
+            - evidence_records
+            - priority_actions
+            - coverage
+            - handoff_to_hallucination
+            - workflow_trace
+
+            每个 issue 必须包含：
+            - issue_id
+            - type
+            - severity
+            - description
+            - suggestion
+            - location
+            - evidence_span
+            - evidence_type
+            - evidence_refs
+
+            severity 只能为：
+            - minor
+            - major
+            - critical
+
+            evidence_type 只能为：
+            - deterministic
+            - semantic
+            
+            evidence_span 输出要求：
+            1. 如果 evidence_index_json 中能找到对应锚点，必须输出结构化 evidence_span，而不是只写模糊描述。
+            2. evidence_span 尽量包含：
+               - anchor_id
+               - block_id
+               - page
+               - paragraph_index
+               - locator
+               - text_excerpt
+            3. location 必须优先输出结构化对象，已知时尽量包含 page、line、section、paragraph_index，不要把所有定位都压成一句自然语言。
+        - role: user
+          text: |-
+            paper_profile_json:
+            {{#1719002001001.paper_profile_json#}}
+
+            template_rule_profile_json:
+            {{#1719002001001.template_rule_profile_json#}}
+
+            requirement_rule_profile_json:
+            {{#1719002001001.requirement_rule_profile_json#}}
+
+            review_context_json:
+            {{#1719002001001.review_context_json#}}
+
+            format_policy_json:
+            {{#1719002001001.format_policy_json#}}
+
+            section_digest_json:
+            {{#1719002001001.section_digest_json#}}
+
+            evidence_index_json:
+            {{#1719002001001.evidence_index_json#}}
+
+            risk_hints_json:
+            {{#1719002001001.risk_hints_json#}}
+
+            detailed_mode:
+            {{#1719002001001.detailed_mode#}}
+
+            review_focus:
+            {{#1719002001001.review_focus#}}
+
+            请输出格式审改 JSON。
+        selected: false
+        structured_output_enabled: false
+        title: 格式审改引擎
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 120
+      id: '1719002002001'
+      position:
+        x: 410
+        y: 180
+      positionAbsolute:
+        x: 410
+        y: 180
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 返回格式审改结果
+        outputs:
+        - value_selector:
+          - '1719002002001'
+          - text
+          variable: format_review_json
+        selected: false
+        title: 结束
+        type: end
+      height: 92
+      id: '1719002003001'
+      position:
+        x: 730
+        y: 195
+      positionAbsolute:
+        x: 730
+        y: 195
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.85
+  rag_pipeline_variables: []

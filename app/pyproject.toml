@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "article-check"
+version = "0.1.0"
+description = "学术论文审查平台最小交付版 — WebDemo + FastAPI 网关 + Dify 多应用编排"
+readme = "README.md"
+authors = [
+    {name = "ShaoPaodiao", email = "18519101256@163.com"},
+]
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["academic", "paper-review", "webdemo", "fastapi", "dify", "docker"]
+
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "python-docx>=1.0",
+    "pymupdf>=1.23",
+    "pdfplumber>=0.10",
+]
+
+[project.optional-dependencies]
+docx = []
+pdf = []
+latex = []  # chktex 需要系统安装
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+    "black",
+    "ruff",
+]
+
+[project.urls]
+Homepage = "https://github.com/ShaoPaodiao/article-check"
+Repository = "https://github.com/ShaoPaodiao/article-check.git"
+
+[tool.setuptools.packages.find]
+include = ["article_check*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.json", "*.md", "*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]

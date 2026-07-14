@@ -1,0 +1,230 @@
+app:
+  description: 基于结构化报告 payload 的单轮报告问答工作流，兼容证据追问与修订建议问答
+  icon: "\U0001F4AC"
+  icon_background: '#EAF4FF'
+  icon_type: emoji
+  mode: workflow
+  name: ArticleCheck 报告问答工作流
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.4.3@84d4aae2c55724f6cdaecfadceed061d7e6b6693ae8945ea2dcd155f280743ef
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 50
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1719006001001-source-1719006002001-target
+      source: '1719006001001'
+      sourceHandle: source
+      target: '1719006002001'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        sourceType: llm
+        targetType: end
+      id: 1719006002001-source-1719006003001-target
+      source: '1719006002001'
+      sourceHandle: source
+      target: '1719006003001'
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 接收结构化报告 payload 与用户问题，执行单轮报告问答
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: report_payload_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: report_payload_json
+        - label: user_question
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: user_question
+        - label: 问题范围
+          max_length: 48
+          options:
+          - overview
+          - evidence
+          - reference
+          - revision
+          required: false
+          type: select
+          variable: question_scope
+        - label: 回答风格
+          max_length: 48
+          options:
+          - concise
+          - standard
+          - detailed
+          required: false
+          type: select
+          variable: answer_style
+      height: 204
+      id: '1719006001001'
+      position:
+        x: 80
+        y: 140
+      positionAbsolute:
+        x: 80
+        y: 140
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 仅依据报告 payload 回答问题，不补充外部事实
+        model:
+          completion_params:
+            temperature: 0.2
+            top_p: 1
+            max_tokens: 2200
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - role: system
+          text: |-
+            你是论文审查报告问答助手。
+            你只能基于 report_payload_json 回答问题，不得引入报告之外的事实。
+
+            必须遵守：
+            1. 如果问题在报告中没有明确依据，直接说明“当前报告未提供足够依据”。
+            2. 不要把“潜在风险”说成“已被证实”。
+            3. 如果 report_payload_json 中存在 question_router_hints、qa_seed_questions、evidence_records 或 findings，需要优先利用这些结构化字段组织答案。
+            4. 当 question_scope=evidence 时，优先回答证据来源、位置、证据卡片和对应 finding。
+            5. 当 question_scope=revision 时，优先回答 priority_actions、revision_plan 和 publication_readiness。
+            6. 回答风格遵循 answer_style；未提供时按 standard 输出。
+            7. 输出纯文本，不要输出 JSON，不要输出 Markdown 代码块。
+        - role: user
+          text: |-
+            report_payload_json:
+            {{#1719006001001.report_payload_json#}}
+
+            user_question:
+            {{#1719006001001.user_question#}}
+
+            question_scope:
+            {{#1719006001001.question_scope#}}
+
+            answer_style:
+            {{#1719006001001.answer_style#}}
+
+            请基于报告回答问题。
+        selected: false
+        structured_output_enabled: false
+        title: 报告问答
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 120
+      id: '1719006002001'
+      position:
+        x: 410
+        y: 180
+      positionAbsolute:
+        x: 410
+        y: 180
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 返回问答文本
+        outputs:
+        - value_selector:
+          - '1719006002001'
+          - text
+          variable: answer
+        selected: false
+        title: 结束
+        type: end
+      height: 92
+      id: '1719006003001'
+      position:
+        x: 730
+        y: 195
+      positionAbsolute:
+        x: 730
+        y: 195
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.85
+  rag_pipeline_variables: []

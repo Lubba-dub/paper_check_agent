@@ -1,0 +1,206 @@
+{
+  "institution": "北京师范大学",
+  "education_level": "undergraduate",
+  "document_family": "graduation_thesis",
+  "profile_type": "template_rule_profile",
+  "template_name": "北京师范大学本科生学术论文规范",
+  "source_document": "北京师范大学本科生学术论文规范.pdf",
+  "issuing_department": "北京师范大学教务部",
+  "issue_date": "2020-01-13",
+  "language_rules": {
+    "require_simplified_chinese": true,
+    "require_legal_units": true,
+    "terms_symbols_must_be_consistent": true,
+    "new_terms_need_annotation": true,
+    "foreign_terms_need_original_name_on_first_use": true,
+    "require_english_title_and_abstract": true
+  },
+  "document_structure": {
+    "required_sections": [
+      "论文封面",
+      "题目",
+      "中文摘要",
+      "英文摘要",
+      "关键词",
+      "目录",
+      "引言或前言",
+      "正文",
+      "结论和建议",
+      "参考文献"
+    ],
+    "optional_sections": [
+      "附录",
+      "致谢"
+    ],
+    "integrity_items": [
+      "诚信承诺书",
+      "论文使用授权的说明"
+    ]
+  },
+  "title_rules": {
+    "max_chinese_chars": 20,
+    "allow_subtitle": true,
+    "avoid_non_common_abbreviations": true,
+    "must_reflect_scope_and_depth": true
+  },
+  "abstract_rules": {
+    "zh_abstract_target_chars": 300,
+    "zh_person": "third_person",
+    "zh_should_include": [
+      "研究目的",
+      "研究方法",
+      "研究结论"
+    ],
+    "zh_forbid": [
+      "公式",
+      "非规范符号术语",
+      "图",
+      "表",
+      "化学结构式"
+    ],
+    "en_abstract_max_content_words": 250
+  },
+  "keyword_rules": {
+    "min_keywords": 3,
+    "max_keywords": 8,
+    "require_english_keywords": true,
+    "separator_style": "space"
+  },
+  "page_layout": {
+    "paper_size": "A4",
+    "print_mode": "double-sided",
+    "binding": "left",
+    "margin_top_mm": 25,
+    "margin_left_mm": 25,
+    "margin_bottom_mm": 20,
+    "margin_right_mm": 20
+  },
+  "font_rules": {
+    "paper_title": {
+      "font_family": "黑体",
+      "font_size": "三号"
+    },
+    "catalog_title": {
+      "font_family": "黑体",
+      "font_size": "三号"
+    },
+    "zh_abstract_title": {
+      "font_family": "黑体",
+      "font_size": "小三号"
+    },
+    "zh_abstract_body": {
+      "font_family": "宋体",
+      "font_size": "四号",
+      "line_spacing_pt": 20
+    },
+    "en_abstract_body": {
+      "font_family": "Times New Roman",
+      "font_size": "四号",
+      "line_spacing": "single"
+    },
+    "keywords_label": {
+      "font_family": "黑体",
+      "font_size": "四号"
+    },
+    "keywords_body": {
+      "font_family": "宋体",
+      "font_size": "四号"
+    },
+    "body": {
+      "font_family": "宋体",
+      "font_size": "小四号",
+      "line_spacing_pt": 20
+    },
+    "references": {
+      "font_family": "宋体",
+      "font_size": "五号",
+      "line_spacing_pt": 16
+    }
+  },
+  "heading_rules": {
+    "patterns": [
+      "1",
+      "1.1",
+      "1.1.1",
+      "1.1.1.1"
+    ],
+    "level_1": {
+      "font_family": "黑体",
+      "font_size": "三号",
+      "bold": true
+    },
+    "level_2": {
+      "font_family": "黑体",
+      "font_size": "小三号",
+      "bold": true
+    },
+    "level_3": {
+      "font_family": "黑体",
+      "font_size": "四号",
+      "bold": true
+    },
+    "level_4": {
+      "font_family": "黑体",
+      "font_size": "小四号",
+      "bold": true
+    },
+    "title_spacing": {
+      "before_after_half_line": 0.5
+    }
+  },
+  "body_rules": {
+    "intro_required": true,
+    "conclusion_required": true,
+    "body_should_be_logical": true,
+    "body_should_follow_academic_norms": true,
+    "allow_section_numbering_styles": [
+      "1",
+      "1.1",
+      "1.1.1",
+      "1.1.1.1",
+      "一、",
+      "（一）",
+      "1.",
+      "（1）"
+    ]
+  },
+  "figure_table_formula_rules": {
+    "figure_numbering": "图1, 图2, ...",
+    "figure_caption_position": "below",
+    "table_numbering": "表1, 表2, ...",
+    "table_caption_position": "above",
+    "formula_numbering": "式（2-13）",
+    "formula_alignment": "center",
+    "formula_number_position": "right"
+  },
+  "reference_rules": {
+    "require_author_checked_sources": true,
+    "require_authoritative_sources": true,
+    "recommend_latest_references": true,
+    "require_foreign_references": true,
+    "citation_order": "appearance_order_numeric",
+    "recommended_standard": "GB/T 7714-2015"
+  },
+  "appendix_rules": {
+    "appendix_optional": true,
+    "appendix_position": "after_references",
+    "appendix_separate_numbering_examples": [
+      "图一",
+      "表一",
+      "式（一）",
+      "文献[一]"
+    ]
+  },
+  "defense_rules": {
+    "presentation_time_minutes_max": 10,
+    "must_prepare_topics": [
+      "选题依据",
+      "研究现状与问题",
+      "论文基本观点",
+      "研究方法",
+      "重要引文出处",
+      "论文优缺点",
+      "写作体会"
+    ]
+  }
+}

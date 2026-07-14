@@ -1,0 +1,125 @@
+# ============================================================
+# Article Check — 平台一键部署编排
+# 用途：在平台环境中直接 build + up，不依赖本地源码挂载与 dify_api.md 文件。
+# ============================================================
+
+services:
+  grobid:
+    image: ${GROBID_IMAGE:-grobid/grobid:0.9.0-crf}
+    container_name: article-check-grobid
+    restart: unless-stopped
+    profiles:
+      - with-grobid
+    expose:
+      - "8070"
+      - "8071"
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx2g
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8070/api/isalive"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - article-check-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FRONTEND_BASE: ${FRONTEND_BASE_IMAGE:-node:20-alpine}
+        RUNTIME_BASE: ${RUNTIME_BASE_IMAGE:-python:3.12-slim}
+    image: article-check:platform
+    container_name: article-check-api
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      - ARTICLE_CHECK_AI_PROVIDER=${ARTICLE_CHECK_AI_PROVIDER:-dify}
+      - DIFY_BASE_URL=${DIFY_BASE_URL:-}
+      - DIFY_API_KEY=${DIFY_API_KEY:-}
+      - DIFY_APP_TYPE=${DIFY_APP_TYPE:-workflow}
+      - DIFY_RESPONSE_MODE=${DIFY_RESPONSE_MODE:-blocking}
+      - DIFY_WORKFLOW_QUERY_KEY=${DIFY_WORKFLOW_QUERY_KEY:-query}
+      - DIFY_INPUTS_JSON=${DIFY_INPUTS_JSON:-{}}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - ARTICLE_CHECK_GROBID_ENABLED=${ARTICLE_CHECK_GROBID_ENABLED:-false}
+      - ARTICLE_CHECK_GROBID_BASE_URL=${ARTICLE_CHECK_GROBID_BASE_URL:-http://grobid:8070}
+      - ARTICLE_CHECK_IDENTITY_CACHE_PATH=/app/.article_check/reference_fast_cache.json
+      - ARTICLE_CHECK_OFFLINE_INDEX_DIR=/app/.article_check/offline_indices
+      - ARTICLE_CHECK_ROOT=/app
+      - PYTHONPATH=/app
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - ARTICLE_CHECK_DIFY_BASE_URL=${ARTICLE_CHECK_DIFY_BASE_URL:-}
+      - ARTICLE_CHECK_DIFY_API_KEY=${ARTICLE_CHECK_DIFY_API_KEY:-}
+      - ARTICLE_CHECK_DIFY_DOCUMENT_READ_BASE_URL=${ARTICLE_CHECK_DIFY_DOCUMENT_READ_BASE_URL:-}
+      - ARTICLE_CHECK_DIFY_DOCUMENT_READ_API_KEY=${ARTICLE_CHECK_DIFY_DOCUMENT_READ_API_KEY:-}
+      - ARTICLE_CHECK_DIFY_DOCUMENT_READ_MODE=${ARTICLE_CHECK_DIFY_DOCUMENT_READ_MODE:-}
+      - ARTICLE_CHECK_DIFY_DOCUMENT_READ_APP_REFERENCE=${ARTICLE_CHECK_DIFY_DOCUMENT_READ_APP_REFERENCE:-}
+      - ARTICLE_CHECK_DIFY_FORMAT_REVIEW_BASE_URL=${ARTICLE_CHECK_DIFY_FORMAT_REVIEW_BASE_URL:-}
+      - ARTICLE_CHECK_DIFY_FORMAT_REVIEW_API_KEY=${ARTICLE_CHECK_DIFY_FORMAT_REVIEW_API_KEY:-}
+      - ARTICLE_CHECK_DIFY_FORMAT_REVIEW_MODE=${ARTICLE_CHECK_DIFY_FORMAT_REVIEW_MODE:-}
+      - ARTICLE_CHECK_DIFY_FORMAT_REVIEW_APP_REFERENCE=${ARTICLE_CHECK_DIFY_FORMAT_REVIEW_APP_REFERENCE:-}
+      - ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_BASE_URL=${ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_BASE_URL:-}
+      - ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_API_KEY=${ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_API_KEY:-}
+      - ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_MODE=${ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_MODE:-}
+      - ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_APP_REFERENCE=${ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_APP_REFERENCE:-}
+      - ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_BASE_URL=${ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_BASE_URL:-}
+      - ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_API_KEY=${ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_API_KEY:-}
+      - ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_MODE=${ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_MODE:-}
+      - ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_APP_REFERENCE=${ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_APP_REFERENCE:-}
+      - ARTICLE_CHECK_DIFY_REPORT_GENERATION_BASE_URL=${ARTICLE_CHECK_DIFY_REPORT_GENERATION_BASE_URL:-}
+      - ARTICLE_CHECK_DIFY_REPORT_GENERATION_API_KEY=${ARTICLE_CHECK_DIFY_REPORT_GENERATION_API_KEY:-}
+      - ARTICLE_CHECK_DIFY_REPORT_GENERATION_MODE=${ARTICLE_CHECK_DIFY_REPORT_GENERATION_MODE:-}
+      - ARTICLE_CHECK_DIFY_REPORT_GENERATION_APP_REFERENCE=${ARTICLE_CHECK_DIFY_REPORT_GENERATION_APP_REFERENCE:-}
+      - ARTICLE_CHECK_DIFY_REPORT_QA_BASE_URL=${ARTICLE_CHECK_DIFY_REPORT_QA_BASE_URL:-}
+      - ARTICLE_CHECK_DIFY_REPORT_QA_API_KEY=${ARTICLE_CHECK_DIFY_REPORT_QA_API_KEY:-}
+      - ARTICLE_CHECK_DIFY_REPORT_QA_MODE=${ARTICLE_CHECK_DIFY_REPORT_QA_MODE:-}
+      - ARTICLE_CHECK_DIFY_REPORT_QA_APP_REFERENCE=${ARTICLE_CHECK_DIFY_REPORT_QA_APP_REFERENCE:-}
+      - ARTICLE_CHECK_PLATFORM_AUTH_ENABLED=${ARTICLE_CHECK_PLATFORM_AUTH_ENABLED:-true}
+      - ARTICLE_CHECK_PLATFORM_AUTH_MODE=${ARTICLE_CHECK_PLATFORM_AUTH_MODE:-prod_api_idp}
+      - ARTICLE_CHECK_PLATFORM_AUTH_API_BASE=${ARTICLE_CHECK_PLATFORM_AUTH_API_BASE:-/prod-api}
+      - ARTICLE_CHECK_PLATFORM_AUTH_HOST=${ARTICLE_CHECK_PLATFORM_AUTH_HOST:-}
+      - ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH=${ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH:-/auth/login}
+      - ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX=${ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX:-article_check_platform_}
+      - ARTICLE_CHECK_PLATFORM_AUTH_DEBUG=${ARTICLE_CHECK_PLATFORM_AUTH_DEBUG:-false}
+    volumes:
+      - reports_data:/app/reports
+      - uploads_data:/app/uploads
+      - runtime_data:/app/.article_check
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - article-check-net
+
+  nginx:
+    image: ${NGINX_IMAGE:-nginx:alpine}
+    container_name: article-check-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-3000}:80"
+    environment:
+      - PLATFORM_AUTH_PROXY_TARGET=${PLATFORM_AUTH_PROXY_TARGET:-http://platform-auth-gateway.example.internal}
+      - PLATFORM_AUTH_PROXY_HOST_HEADER=${PLATFORM_AUTH_PROXY_HOST_HEADER:-platform-auth-gateway.example.internal}
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - article-check-net
+
+networks:
+  article-check-net:
+    driver: bridge
+
+volumes:
+  reports_data:
+  uploads_data:
+  runtime_data:

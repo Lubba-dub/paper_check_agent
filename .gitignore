@@ -1,0 +1,19 @@
+.DS_Store
+Thumbs.db
+
+# Local deployment secrets
+app/.env.platform
+app/.env
+app/.venv/
+
+# Frontend local dependencies
+app/article_check/web/frontend/node_modules/
+
+# Runtime outputs
+app/reports/
+app/uploads/
+app/.worktrees/
+app/repos/
+
+# Offline image archives are distributed out-of-band
+镜像包/*.tar

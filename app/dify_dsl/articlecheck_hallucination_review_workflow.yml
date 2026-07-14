@@ -1,0 +1,327 @@
+app:
+  description: 针对引文幻觉、事实幻觉与结构幻觉的结构化审查工作流
+  icon: "\U0001F50E"
+  icon_background: '#FFF4E5'
+  icon_type: emoji
+  mode: workflow
+  name: ArticleCheck 幻觉审查工作流
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.4.3@84d4aae2c55724f6cdaecfadceed061d7e6b6693ae8945ea2dcd155f280743ef
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 50
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1719003001001-source-1719003002001-target
+      source: '1719003001001'
+      sourceHandle: source
+      target: '1719003002001'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        sourceType: llm
+        targetType: end
+      id: 1719003002001-source-1719003003001-target
+      source: '1719003002001'
+      sourceHandle: source
+      target: '1719003003001'
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 接收论文解析结果、引用核验结果与幻觉审查策略
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: paper_profile_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: paper_profile_json
+        - label: review_context_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: review_context_json
+        - label: reference_verify_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: reference_verify_json
+        - label: hallucination_policy_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: hallucination_policy_json
+        - label: section_digest_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: section_digest_json
+        - label: evidence_index_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: evidence_index_json
+        - label: format_review_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: format_review_json
+        - label: reference_review_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: reference_review_json
+        - label: 详细模式
+          max_length: 48
+          options:
+          - 'True'
+          - 'False'
+          required: true
+          type: select
+          variable: detailed_mode
+        - label: 审查焦点
+          max_length: 96
+          options: []
+          required: false
+          type: text-input
+          variable: review_focus
+      height: 404
+      id: '1719003001001'
+      position:
+        x: 80
+        y: 140
+      positionAbsolute:
+        x: 80
+        y: 140
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 对引文、论断与结构一致性进行保守审计式风险审查
+        model:
+          completion_params:
+            temperature: 0.1
+            top_p: 1
+            max_tokens: 4000
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - role: system
+          text: |-
+            你是论文幻觉审查专家。
+            你只基于输入的论文对象、引用核验结果和策略做判断，不得把“潜在风险”说成“已证实造假”。
+
+            你需要识别以下问题：
+            - citation_hallucination
+            - claim_hallucination
+            - structure_hallucination
+
+            判断原则：
+            1. 引文元数据与外部核验明显不一致时，可判为高风险引文问题。
+            2. 正文论断没有在提供上下文中找到充分证据时，只能表述为“证据不足”。
+            3. 摘要、正文、实验、结论不一致时，可判定结构幻觉风险。
+            4. 不得虚构 DOI、作者、年份、数据集、实验结果或引用来源。
+            5. 需要结合 format_review_json 避免把纯格式问题重复表述为幻觉问题。
+            6. 需要结合 reference_review_json 和 reference_verify_json，优先复用已有引文核验结论。
+            7. 如果 review_focus 不为空，需要优先覆盖相关章节、结论或实验部分。
+            8. 只输出 JSON，不要输出解释。
+
+            当 detailed_mode=False 时，输出 JSON 顶层字段必须包含：
+            - score
+            - summary
+            - issues
+            - meta
+
+            当 detailed_mode=True 时，额外增加：
+            - risk_dimensions
+            - claim_checkpoints
+            - cross_section_conflicts
+            - evidence_records
+            - recommended_actions
+            - cross_workflow_refs
+            - qa_focus_hints
+            - workflow_trace
+
+            每个 issue 必须包含：
+            - issue_id
+            - type
+            - severity
+            - description
+            - suggestion
+            - location
+            - evidence_span
+            - evidence
+
+            severity 只能为：
+            - minor
+            - major
+            - critical
+
+            evidence_span 输出要求：
+            1. 如果 evidence_index_json 或 reference_review_json 中存在可复用锚点，必须优先复用对应 anchor_id。
+            2. evidence_span 尽量包含：
+               - anchor_id
+               - block_id
+               - page
+               - paragraph_index
+               - locator
+               - text_excerpt
+            3. location 必须优先输出结构化对象，已知时尽量包含 page、line、section、paragraph_index，不要退化成模糊自然语言。
+        - role: user
+          text: |-
+            paper_profile_json:
+            {{#1719003001001.paper_profile_json#}}
+
+            review_context_json:
+            {{#1719003001001.review_context_json#}}
+
+            reference_verify_json:
+            {{#1719003001001.reference_verify_json#}}
+
+            hallucination_policy_json:
+            {{#1719003001001.hallucination_policy_json#}}
+
+            section_digest_json:
+            {{#1719003001001.section_digest_json#}}
+
+            evidence_index_json:
+            {{#1719003001001.evidence_index_json#}}
+
+            format_review_json:
+            {{#1719003001001.format_review_json#}}
+
+            reference_review_json:
+            {{#1719003001001.reference_review_json#}}
+
+            detailed_mode:
+            {{#1719003001001.detailed_mode#}}
+
+            review_focus:
+            {{#1719003001001.review_focus#}}
+
+            请输出论文幻觉审查 JSON。
+        selected: false
+        structured_output_enabled: false
+        title: 幻觉审查引擎
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 120
+      id: '1719003002001'
+      position:
+        x: 410
+        y: 180
+      positionAbsolute:
+        x: 410
+        y: 180
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 返回幻觉审查结果
+        outputs:
+        - value_selector:
+          - '1719003002001'
+          - text
+          variable: hallucination_review_json
+        selected: false
+        title: 结束
+        type: end
+      height: 92
+      id: '1719003003001'
+      position:
+        x: 730
+        y: 195
+      positionAbsolute:
+        x: 730
+        y: 195
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.85
+  rag_pipeline_variables: []

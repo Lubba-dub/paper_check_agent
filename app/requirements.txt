@@ -1,0 +1,18 @@
+# Article Check — 核心依赖
+httpx>=0.27
+pydantic>=2.0
+python-dotenv>=1.0
+fastapi>=0.110
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# Word 格式检查
+python-docx>=1.0
+
+# PDF 文本提取
+pymupdf>=1.23
+pdfplumber>=0.10
+
+# KV 压缩（可选）
+# multi-turboquant>=1.0    # pip install 后 uncomment
+# march-kv>=0.1            # pip install 后 uncomment
