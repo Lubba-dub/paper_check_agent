@@ -9,6 +9,10 @@ app/.venv/
 # Frontend local dependencies
 app/article_check/web/frontend/node_modules/
 
+# Python caches
+app/**/__pycache__/
+app/**/*.pyc
+
 # Runtime outputs
 app/reports/
 app/uploads/
