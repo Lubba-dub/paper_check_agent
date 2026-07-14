@@ -64,6 +64,7 @@ article_check/web/frontend/
 - `GET /api/status`
 - `GET /api/health`
 - `GET /api/platform-auth-config`
+- `GET /api/auth/session`
 
 ## Dify 相关文件
 
@@ -96,6 +97,39 @@ Docker：
 ```powershell
 docker compose -f docker-compose.platform.yml --env-file .env.platform up -d --build
 ```
+
+## 平台认证与后端授权
+
+当前交付版已经把平台认证从“仅前端登录”补齐为“前后端联动授权”：
+
+- 前端认证脚本位于 `article_check/web/frontend/public/auth.js`
+- 后端认证校验入口位于 `article_check/web/server.py`
+- 当前配置下，前端会给 `/api/*` 和 `/prod-api/*` 请求附加认证头
+- 后端会在 `ARTICLE_CHECK_PLATFORM_AUTH_ENABLED=true` 且 `ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API=true` 时校验业务接口令牌
+
+常用平台认证变量：
+
+- `ARTICLE_CHECK_PLATFORM_AUTH_ENABLED`
+- `ARTICLE_CHECK_PLATFORM_AUTH_MODE`
+- `ARTICLE_CHECK_PLATFORM_AUTH_API_BASE`
+- `ARTICLE_CHECK_PLATFORM_AUTH_HOST`
+- `ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH`
+- `ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX`
+- `PLATFORM_AUTH_PROXY_TARGET`
+- `PLATFORM_AUTH_PROXY_HOST_HEADER`
+
+可选高级变量：
+
+- `ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API`
+- `ARTICLE_CHECK_PLATFORM_AUTH_GATEWAY_BASE_URL`
+- `ARTICLE_CHECK_PLATFORM_AUTH_CACHE_TTL_SECONDS`
+- `ARTICLE_CHECK_PLATFORM_AUTH_TIMEOUT_SECONDS`
+
+建议联调时先检查：
+
+1. `GET /api/platform-auth-config`
+2. `GET /api/auth/session`
+3. `POST /api/review`
 
 ## 说明
 

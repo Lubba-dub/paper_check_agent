@@ -304,7 +304,7 @@
     const originalFetch = window.fetch.bind(window);
     window.fetch = (input, init = {}) => {
       const url = typeof input === 'string' ? input : input?.url || '';
-      if (!shouldAttachProdApiHeaders(url)) {
+      if (!shouldAttachAuthHeaders(url)) {
         return originalFetch(input, init);
       }
       const mergedHeaders = buildAuthHeaders(normalizeHeaders(init.headers));
@@ -315,12 +315,24 @@
     };
   }
 
-    function shouldAttachProdApiHeaders(url) {
+    function shouldAttachAuthHeaders(url) {
+    const backendApiMatch =
+      url.startsWith('/api/') ||
+      url === '/api' ||
+      url.includes(`${window.location.origin}/api/`);
+    const normalizedApiBase = String(config.apiBase || '').replace(/\/$/, '');
+    const prodApiMatch =
+      normalizedApiBase &&
+      (url === normalizedApiBase ||
+        url.startsWith(`${normalizedApiBase}/`) ||
+        url.includes(`${window.location.origin}${normalizedApiBase}/`));
+    if (backendApiMatch) {
+      return true;
+    }
     if (config.mode !== 'prod_api_idp') {
       return false;
     }
-    const normalizedApiBase = String(config.apiBase || '').replace(/\/$/, '');
-    if (normalizedApiBase && (url === normalizedApiBase || url.startsWith(`${normalizedApiBase}/`))) {
+    if (prodApiMatch) {
       return true;
     }
     return url.startsWith('/prod-api/') || url.includes(`${window.location.origin}/prod-api/`);

@@ -21,3 +21,4 @@ app/repos/
 
 # Offline image archives are distributed out-of-band
 镜像包/*.tar
+镜像包.zip

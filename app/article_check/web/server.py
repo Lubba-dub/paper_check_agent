@@ -10,6 +10,7 @@ FastAPI Web 服务器 — Article Check 图形化界面后端
 """
 from __future__ import annotations
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -20,10 +21,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel
+from urllib.parse import urlparse
 
 from article_check.layers import build_evidence_bundle, run_deterministic_audit, run_layered_verification
 from article_check.runtime import (
@@ -106,6 +108,24 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 REPORT_DIR = Path("reports")
 REPORT_DIR.mkdir(exist_ok=True)
 SUPPORTED_UPLOAD_SUFFIXES = {".docx", ".pdf", ".tex", ".ltx"}
+PLATFORM_AUTH_PUBLIC_API_PATHS = {
+    "/api/health",
+    "/api/platform-auth-config",
+    "/api/report/file",
+    "/api/status",
+}
+_platform_auth_cache: Dict[str, Dict[str, Any]] = {}
+HOP_BY_HOP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+    "content-length",
+}
 
 
 # ─── Helper ─────────────────────────────────────────────
@@ -117,6 +137,30 @@ async def startup():
         d.mkdir(exist_ok=True)
 
 
+@app.middleware("http")
+async def platform_auth_guard(request: Request, call_next):
+    request.state.platform_auth = {
+        "enabled": _platform_auth_enabled(),
+        "validated": False,
+        "mode": _platform_auth_mode(),
+    }
+    path = request.url.path
+    if (
+        _platform_auth_enabled()
+        and _platform_auth_enforce_api()
+        and path.startswith("/api/")
+        and path not in PLATFORM_AUTH_PUBLIC_API_PATHS
+    ):
+        try:
+            request.state.platform_auth = await _validate_platform_auth(request)
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=api_error(str(exc.detail), exc.status_code),
+            )
+    return await call_next(request)
+
+
 def api_success(data: Any = None, message: str = "ok") -> dict:
     return {"status": "ok", "data": data, "message": message}
 
@@ -125,9 +169,97 @@ def api_error(message: str, code: int = 400) -> dict:
     return {"status": "error", "message": message, "code": code}
 
 
-def _platform_auth_runtime_config() -> Dict[str, Any]:
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _platform_auth_enabled() -> bool:
+    return _env_flag("ARTICLE_CHECK_PLATFORM_AUTH_ENABLED", False)
+
+
+def _platform_auth_enforce_api() -> bool:
+    return _env_flag("ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API", _platform_auth_enabled())
+
+
+def _platform_auth_cache_ttl_seconds() -> int:
+    raw = os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_CACHE_TTL_SECONDS", "").strip()
+    if not raw:
+        return 30
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 30
+
+
+def _platform_auth_timeout_seconds() -> float:
+    raw = os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return 8.0
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return 8.0
+
+
+def _platform_auth_mode() -> str:
+    return os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_MODE", "").strip() or "prod_api_idp"
+
+
+def _normalize_path_prefix(value: str, *, trailing_slash: bool = False) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if re.match(r"^https?://", text, re.IGNORECASE):
+        return text.rstrip("/") + ("/" if trailing_slash else "")
+    normalized = "/" + text.strip("/")
+    if trailing_slash:
+        return normalized if normalized.endswith("/") else f"{normalized}/"
+    return normalized
+
+
+def _normalize_url_base(value: str) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
+def _is_backend_self_target(value: str) -> bool:
+    target = _normalize_url_base(value)
+    if not target:
+        return False
+    try:
+        parsed = urlparse(target if "://" in target else f"http://{target}")
+    except Exception:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    port = parsed.port
+    return hostname in {"backend", "localhost", "127.0.0.1", "0.0.0.0"} and port in {None, 80, 8000}
+
+
+def _platform_auth_upstream_base() -> str:
+    explicit_gateway = _normalize_url_base(os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_GATEWAY_BASE_URL", ""))
+    if explicit_gateway.startswith(("http://", "https://")) and not _is_backend_self_target(explicit_gateway):
+        return explicit_gateway
+
+    host = _normalize_url_base(os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_HOST", ""))
+    if host.startswith(("http://", "https://")) and not _is_backend_self_target(host):
+        return host
+
+    proxy_target = _normalize_url_base(os.getenv("PLATFORM_AUTH_PROXY_TARGET", ""))
+    if proxy_target.startswith(("http://", "https://")) and not _is_backend_self_target(proxy_target):
+        return proxy_target
+    return ""
+
+
+def _platform_auth_runtime_config(request: Optional[Request] = None) -> Dict[str, Any]:
     raw_enabled = os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_ENABLED", "").strip().lower()
     raw_debug = os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_DEBUG", "").strip().lower()
+    upstream_base = _platform_auth_upstream_base()
+    api_base = _normalize_path_prefix(os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_API_BASE", "").strip()) or "/prod-api"
+    callback_path = _normalize_path_prefix(
+        os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH", "").strip(),
+    ) or "/auth/login"
 
     config: Dict[str, Any] = {}
     if raw_enabled in {"true", "false"}:
@@ -137,15 +269,183 @@ def _platform_auth_runtime_config() -> Dict[str, Any]:
 
     string_fields = {
         "mode": os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_MODE", "").strip(),
-        "apiBase": os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_API_BASE", "").strip(),
+        "apiBase": api_base,
         "host": os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_HOST", "").strip(),
-        "callbackPath": os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH", "").strip(),
+        "callbackPath": callback_path,
         "storagePrefix": os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX", "").strip(),
     }
     for key, value in string_fields.items():
         if value:
             config[key] = value
+    config["upstreamConfigured"] = bool(upstream_base)
+    if request is not None:
+        forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+        forwarded_proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        if forwarded_host:
+            config["requestOrigin"] = f"{forwarded_proto}://{forwarded_host}"
+    proxy_host_header = os.getenv("PLATFORM_AUTH_PROXY_HOST_HEADER", "").strip()
+    if proxy_host_header:
+        config["proxyHostHeader"] = proxy_host_header
+    config["apiProtectionEnabled"] = _platform_auth_enforce_api()
     return config
+
+
+def _platform_auth_extract_token(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.lower().startswith("bearer "):
+        return raw[7:].strip()
+    return raw
+
+
+def _platform_auth_normalize_header(value: str) -> str:
+    token = _platform_auth_extract_token(value)
+    return f"Bearer {token}" if token else ""
+
+
+def _decode_jwt_payload(token: str) -> Dict[str, Any]:
+    parts = str(token or "").split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1]
+    payload += "=" * (-len(payload) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(payload.encode("utf-8")).decode("utf-8")
+        parsed = json.loads(decoded)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _platform_auth_from_cache(cache_key: str) -> Optional[Dict[str, Any]]:
+    entry = _platform_auth_cache.get(cache_key)
+    if not entry:
+        return None
+    if entry.get("expires_at", 0) <= time.time():
+        _platform_auth_cache.pop(cache_key, None)
+        return None
+    cached = dict(entry.get("value") or {})
+    cached["cache_hit"] = True
+    return cached
+
+
+def _platform_auth_save_cache(cache_key: str, value: Dict[str, Any]) -> Dict[str, Any]:
+    stored = dict(value)
+    stored["cache_hit"] = False
+    ttl = _platform_auth_cache_ttl_seconds()
+    if ttl > 0:
+        _platform_auth_cache[cache_key] = {
+            "expires_at": time.time() + ttl,
+            "value": dict(stored),
+        }
+    return stored
+
+
+async def _validate_platform_auth(request: Request) -> Dict[str, Any]:
+    authorization = request.headers.get("authorization", "").strip()
+    if not authorization:
+        raise HTTPException(401, "当前部署已启用平台认证，请先登录后再调用业务接口")
+
+    access_token = _platform_auth_extract_token(authorization)
+    if not access_token:
+        raise HTTPException(401, "平台认证令牌为空，请重新登录")
+
+    mode = _platform_auth_mode()
+    cache_key = f"{mode}:{access_token}"
+    cached = _platform_auth_from_cache(cache_key)
+    if cached:
+        return cached
+
+    upstream_base = _platform_auth_upstream_base()
+    if not upstream_base:
+        raise HTTPException(
+            503,
+            "平台认证已启用，但后端未配置认证网关地址，请检查 ARTICLE_CHECK_PLATFORM_AUTH_HOST、ARTICLE_CHECK_PLATFORM_AUTH_GATEWAY_BASE_URL 或 PLATFORM_AUTH_PROXY_TARGET",
+        )
+
+    headers = {"Authorization": _platform_auth_normalize_header(authorization)}
+    refresh_token = request.headers.get("refresh-token", "").strip()
+    if refresh_token:
+        headers["refresh-token"] = _platform_auth_normalize_header(refresh_token)
+
+    claims = _decode_jwt_payload(access_token)
+    timeout = _platform_auth_timeout_seconds()
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            if mode == "prod_api_idp":
+                response = await client.get(f"{upstream_base.rstrip('/')}/system/user/idp/getInfo", headers=headers)
+                if response.status_code >= 400:
+                    detail = response.text.strip() or "平台认证网关拒绝访问"
+                    raise HTTPException(401, f"平台认证校验失败: {detail[:200]}")
+                payload = response.json()
+                user_info = payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+                if not isinstance(user_info, dict) or not user_info:
+                    raise HTTPException(401, "平台认证校验失败: 未获取到有效用户信息")
+                return _platform_auth_save_cache(cache_key, {
+                    "enabled": True,
+                    "validated": True,
+                    "mode": mode,
+                    "claims": claims,
+                    "user_info": user_info,
+                    "gateway_base_url": upstream_base,
+                })
+
+            response = await client.post(
+                f"{upstream_base.rstrip('/')}/api/oauth/introspect",
+                headers={"Content-Type": "application/json"},
+                json={"token": access_token},
+            )
+            if response.status_code >= 400:
+                detail = response.text.strip() or "平台认证网关拒绝访问"
+                raise HTTPException(401, f"平台认证校验失败: {detail[:200]}")
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("active") is not True:
+                raise HTTPException(401, "平台认证校验失败: access_token 已失效")
+            return _platform_auth_save_cache(cache_key, {
+                "enabled": True,
+                "validated": True,
+                "mode": mode,
+                "claims": claims,
+                "user_info": payload,
+                "gateway_base_url": upstream_base,
+            })
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        logger.exception("平台认证网关调用失败")
+        raise HTTPException(502, f"平台认证网关调用失败: {exc}") from exc
+
+
+def _build_proxy_headers(request: Request) -> Dict[str, str]:
+    headers: Dict[str, str] = {}
+    for key, value in request.headers.items():
+        if key.lower() in HOP_BY_HOP_HEADERS:
+            continue
+        headers[key] = value
+
+    proxy_host_header = os.getenv("PLATFORM_AUTH_PROXY_HOST_HEADER", "").strip()
+    if proxy_host_header:
+        headers["host"] = proxy_host_header
+    else:
+        headers.pop("host", None)
+
+    headers["x-forwarded-proto"] = request.headers.get("x-forwarded-proto") or request.url.scheme
+    headers["x-forwarded-host"] = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    headers["x-forwarded-for"] = request.headers.get("x-forwarded-for") or (
+        request.client.host if request.client and request.client.host else ""
+    )
+    return headers
+
+
+def _filter_proxy_response_headers(headers: httpx.Headers) -> Dict[str, str]:
+    filtered: Dict[str, str] = {}
+    for key, value in headers.items():
+        if key.lower() in HOP_BY_HOP_HEADERS:
+            continue
+        filtered[key] = value
+    return filtered
 
 
 def _resolve_safe_path(raw_path: str) -> Path:
@@ -618,9 +918,20 @@ async def get_status():
         "dify_enabled": bool(registry_status.get("available")),
         "dify_registry": registry_status,
         "review_backend": "dify_workflow_chain" if registry_status.get("available") else "local_runtime",
+        "platform_auth": _platform_auth_runtime_config(),
         "templates": template_registry.count,
         "templates_list": [t.name for t in template_registry.list_all()],
     })
+
+
+@app.get("/api/auth/session")
+async def get_platform_auth_session(request: Request):
+    """返回当前请求关联的平台认证上下文。"""
+    return api_success(getattr(request.state, "platform_auth", {
+        "enabled": _platform_auth_enabled(),
+        "validated": False,
+        "mode": _platform_auth_mode(),
+    }))
 
 
 @app.post("/api/upload")
@@ -998,8 +1309,41 @@ async def frontend_index():
 
 
 @app.get("/api/platform-auth-config")
-async def platform_auth_config():
-    return _platform_auth_runtime_config()
+async def platform_auth_config(request: Request):
+    return _platform_auth_runtime_config(request)
+
+
+@app.api_route("/prod-api/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+async def platform_auth_proxy(proxy_path: str, request: Request):
+    upstream_base = _platform_auth_upstream_base()
+    if not upstream_base:
+        raise HTTPException(
+            503,
+            "平台认证代理未配置上游地址，请检查 ARTICLE_CHECK_PLATFORM_AUTH_HOST 或 PLATFORM_AUTH_PROXY_TARGET。",
+        )
+
+    target_url = f"{upstream_base.rstrip('/')}/{proxy_path.lstrip('/')}"
+    if request.url.query:
+        target_url = f"{target_url}?{request.url.query}"
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False) as client:
+            upstream_response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=_build_proxy_headers(request),
+                content=await request.body(),
+            )
+    except httpx.HTTPError as exc:
+        logger.exception("平台认证代理请求失败: %s", target_url)
+        raise HTTPException(502, f"平台认证代理请求失败: {exc}") from exc
+
+    return Response(
+        content=upstream_response.content,
+        status_code=upstream_response.status_code,
+        headers=_filter_proxy_response_headers(upstream_response.headers),
+        media_type=upstream_response.headers.get("content-type"),
+    )
 
 
 @app.get("/{full_path:path}")

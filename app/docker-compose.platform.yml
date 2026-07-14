@@ -85,6 +85,8 @@ services:
       - ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH=${ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH:-/auth/login}
       - ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX=${ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX:-article_check_platform_}
       - ARTICLE_CHECK_PLATFORM_AUTH_DEBUG=${ARTICLE_CHECK_PLATFORM_AUTH_DEBUG:-false}
+      - PLATFORM_AUTH_PROXY_TARGET=${PLATFORM_AUTH_PROXY_TARGET:-http://platform-auth-gateway.example.internal}
+      - PLATFORM_AUTH_PROXY_HOST_HEADER=${PLATFORM_AUTH_PROXY_HOST_HEADER:-platform-auth-gateway.example.internal}
     volumes:
       - reports_data:/app/reports
       - uploads_data:/app/uploads

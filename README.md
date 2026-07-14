@@ -131,13 +131,23 @@ npm run dev
 - `DIFY_API_KEY`
 - `DIFY_APP_TYPE`
 - `DIFY_RESPONSE_MODE`
-- `ARTICLECHECK_AUTH_MODE`
-- `ARTICLECHECK_PLATFORM_AUTH_BASE`
-- `ARTICLECHECK_PLATFORM_APP_ID`
-- `ARTICLECHECK_PLATFORM_APP_SECRET`
-- `ARTICLECHECK_PLATFORM_CALLBACK_PATH`
+- `ARTICLE_CHECK_PLATFORM_AUTH_ENABLED`
+- `ARTICLE_CHECK_PLATFORM_AUTH_MODE`
+- `ARTICLE_CHECK_PLATFORM_AUTH_API_BASE`
+- `ARTICLE_CHECK_PLATFORM_AUTH_HOST`
+- `ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH`
+- `ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX`
+- `PLATFORM_AUTH_PROXY_TARGET`
+- `PLATFORM_AUTH_PROXY_HOST_HEADER`
 
 如果本次部署不启用平台官方认证，可根据实际场景关闭或调整对应认证变量。
+
+如需显式控制后端授权行为，还可以按需补充以下可选变量：
+
+- `ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API`
+- `ARTICLE_CHECK_PLATFORM_AUTH_GATEWAY_BASE_URL`
+- `ARTICLE_CHECK_PLATFORM_AUTH_CACHE_TTL_SECONDS`
+- `ARTICLE_CHECK_PLATFORM_AUTH_TIMEOUT_SECONDS`
 
 ## 安全说明
 
@@ -236,6 +246,24 @@ npm run dev
 
 - 返回前端认证脚本所需的平台认证配置
 
+### 9. 当前认证会话
+
+- `GET /api/auth/session`
+
+用途：
+
+- 返回当前请求关联的平台认证状态，便于部署联调时确认后端是否已经识别并校验用户令牌
+
+## 平台认证说明
+
+当前交付版已按项目方官方认证脚本的接入方式完成联动：
+
+- 前端 `public/auth.js` 会在平台登录成功后自动为 `/prod-api/*` 和本系统 `/api/*` 请求附加认证头
+- 后端 `article_check/web/server.py` 在启用平台认证时会对业务接口执行令牌校验
+- `GET /api/health`、`GET /api/status`、`GET /api/platform-auth-config`、`GET /api/report/file` 默认保留为可直接访问接口，便于健康检查、状态查看和报告预览
+
+若部署时希望后端不拦截业务接口，可将 `ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API=false`。
+
 ## 启动后建议做的最小检查
 
 部署完成后，建议至少检查以下项目：
@@ -243,8 +271,9 @@ npm run dev
 1. 打开首页是否正常显示
 2. `GET /api/health` 是否返回健康状态
 3. `GET /api/status` 是否能看到 Dify 注册状态
-4. 上传一篇论文后，`/api/review` 是否能返回审查结果
-5. 报告页中证据定位和报告问答是否正常
+4. 登录平台后访问 `GET /api/auth/session`，确认 `validated` 为 `true`
+5. 上传一篇论文后，`/api/review` 是否能返回审查结果
+6. 报告页中证据定位和报告问答是否正常
 
 ## 停止服务
 
