@@ -358,7 +358,7 @@
 
     async function loadRuntimeConfig() {
       try {
-        const response = await fetch('/api/platform-auth-config', { credentials: 'same-origin' });
+        const response = await fetch('/webdemo/paper-check-agent/api/platform-auth-config', { credentials: 'same-origin' });
         if (!response.ok) {
           return window.__ARTICLE_CHECK_PLATFORM_AUTH__ || {};
         }
