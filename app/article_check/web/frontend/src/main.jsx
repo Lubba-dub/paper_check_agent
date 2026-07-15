@@ -6,7 +6,7 @@ import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename="/webdemo/paper-check-agent">
       <App />
     </BrowserRouter>
   </React.StrictMode>
