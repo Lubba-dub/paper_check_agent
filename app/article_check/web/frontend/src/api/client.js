@@ -1,4 +1,4 @@
-const BASE = '/webdemo/paper-check-agent/api';
+const BASE = '/api';
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {

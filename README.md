@@ -1,86 +1,103 @@
 # ArticleCheck 交付包
 
-这是用于部署和交接的最小可运行交付目录，只包括部署所需的应用代码、环境模板、Docker 编排文件和一键脚本。
+ArticleCheck 是一套面向高校论文送审前检查场景的 Web 系统，当前交付包已经收束为一条可部署、可回归、可移交的稳定主线：
 
-## 目录结构
-
-```text
-交付版/
-├── app/                    # 主应用目录
-├── 镜像包/                 # 离线镜像说明目录（tar 包不随 Git 仓库提交）
-├── 一键部署.ps1            # 在线 Docker 部署
-├── 一键停止.ps1            # 停止 Docker 服务
-├── 一键导入离线镜像.ps1     # 导入离线镜像包
-├── 一键离线部署.ps1         # 离线 Docker 部署
-├── 一键配置虚拟环境.ps1      # 本地 Python 虚拟环境部署
-└── README.md               # 当前文档
-```
-
-## 系统说明
-
-ArticleCheck 是一个面向高校论文送审前审查与修改场景的 Web 系统，适合论文作者、导师和审改人员使用。系统当前收束为一条稳定主线：
-
-- 前端：React Web 页面
+- 前端：React
 - 后端：FastAPI
-- 审查主链：Dify 多工作流编排 + 本地回退能力
-- 主要能力：上传论文、论文审查、参考文献风险识别、证据定位、正式报告导出、报告问答
+- 审查主链：Dify 多工作流 + 本地回退
+- 核心能力：上传论文、格式检查、参考文献核验、问题依据与定位、正式报告导出、报告追问
 
-当前正式支持的论文文件类型：
+当前正式支持的文件类型：
 
 - `docx`
 - `pdf`
 - `tex / ltx`
 
-## 推荐部署方式
+## 交付目录结构
 
-### 1. 在线 Docker 部署
+```text
+paper_check_agent/
+├── app/                      # 实际部署目录
+├── 镜像包/                   # 离线镜像说明与校验清单（tar 不入库）
+├── 一键部署.ps1              # 在线 Docker 部署
+├── 一键停止.ps1              # 停止服务
+├── 一键导入离线镜像.ps1       # 导入离线镜像
+├── 一键离线部署.ps1           # 离线 Docker 启动
+├── 一键配置虚拟环境.ps1        # 本地 Python 启动
+└── README.md                 # 当前文档
+```
 
-适合目标机器可以联网并允许在线构建镜像的场景。
+## 本次交付包含什么
 
-执行顺序：
+这次交付已经包含：
+
+- component-first 审查链路
+- `component_classification` Dify 工作流接入
+- FastAPI `classify/components -> review -> source-snippet` 全链路
+- LaTeX 多余重复定位修正
+- 参考文献 `Bibliography` 识别
+- 前端问题定位刷新优化
+- 正式报告展示优化
+- 平台认证 `legacy_oauth` 默认配置
+- 在线 / 离线 Docker 编排
+- 前端已构建 `dist`
+
+## 快速开始
+
+### 方式一：在线 Docker 部署
+
+适合目标机器能联网拉镜像、能访问 Dify 和认证网关的场景。
 
 1. 进入 `app/`
-2. 从 `app/.env.platform.example` 复制生成 `app/.env.platform`
-3. 填写真实环境变量
-4. 在交付版根目录运行 `一键部署.ps1`
+2. 复制环境模板：
 
-如果手动执行，可使用：
+```powershell
+Copy-Item .env.platform.example .env.platform
+```
+
+3. 按“环境变量说明”填写真实值
+4. 在仓库根目录执行：
+
+```powershell
+.\一键部署.ps1
+```
+
+如果手动执行：
 
 ```powershell
 cd app
 docker compose -f docker-compose.platform.yml --env-file .env.platform up -d --build
 ```
 
-### 2. 离线 Docker 部署
+### 方式二：离线 Docker 部署
 
-适合目标机器无法访问外网，但允许提前导入镜像包的场景。
+适合目标机器无法访问外网，但可以提前导入镜像的场景。
 
-执行顺序：
+1. 按 [镜像包/README.md](file:///e:/cocoon/projects/article_check/.publish_tmp/paper_check_agent_latest_20260715/镜像包/README.md) 准备 `.tar`
+2. 把镜像文件放入 `镜像包/`
+3. 运行：
 
-1. 先按 `镜像包/README.md` 准备所需 `.tar`
-2. 将镜像文件放入 `镜像包/`
-3. 在交付版根目录运行 `一键导入离线镜像.ps1`
-4. 再运行 `一键离线部署.ps1`
+```powershell
+.\一键导入离线镜像.ps1
+.\一键离线部署.ps1
+```
 
-如果手动执行，可使用：
+离线手动执行：
 
 ```powershell
 cd app
 docker compose -f docker-compose.offline.yml --env-file .env.platform up -d
 ```
 
-### 3. Python 虚拟环境部署
+### 方式三：Python 虚拟环境部署
 
-适合暂时无法使用 Docker，只需要在本机快速启动服务的场景。
+适合只想快速本地起服务，不走 Docker 的场景。
 
-执行顺序：
+```powershell
+.\一键配置虚拟环境.ps1
+```
 
-1. 在交付版根目录运行 `一键配置虚拟环境.ps1`
-2. 进入 `app/`
-3. 复制环境模板并补齐变量
-4. 启动后端与前端
-
-手动执行参考：
+或者手动执行：
 
 ```powershell
 cd app
@@ -91,7 +108,7 @@ Copy-Item .env.example .env
 python -m article_check.web.server
 ```
 
-前端本地开发：
+前端开发模式：
 
 ```powershell
 cd app\article_check\web\frontend
@@ -99,199 +116,210 @@ npm install
 npm run dev
 ```
 
-## 运行所需关键文件
+## 环境变量说明
 
-部署时最重要的是 `app/` 目录。关键文件如下：
+### 原则
 
-- `app/Dockerfile`
-- `app/docker-compose.yml`
-- `app/docker-compose.platform.yml`
-- `app/docker-compose.offline.yml`
-- `app/.env.example`
-- `app/.env.docker`
-- `app/.env.platform.example`
-- `app/nginx/`
-- `app/article_check/`
-- `app/dify_dsl/`
-- `app/北师大论文格式要求/`
+- 仓库中只保留模板，不保留真实密钥
+- 真实 `API Key` 与部署环境变量请放到仓库外部单独保管
+- 建议参考外部模板：
+  [交付版外部环境模板](file:///e:/cocoon/projects/article_check/交付版/外部环境文件/paper_check_agent_env.secrets.template)
 
-说明：
+### 最少需要填写的变量
 
-- `app/.env.platform.example` 是平台部署模板
-- `app/.env.platform` 需要部署前从模板复制生成，不随 GitHub 仓库提交
-- `app/dify_dsl/` 是 Dify 工作流定义
-- `app/北师大论文格式要求/` 是审查规则资产
-
-## 部署前需要检查的环境变量
-
-至少确认以下变量已经正确填写到本地 `app/.env.platform`：
+部署 `app/.env.platform` 时，至少应确认这些值：
 
 - `ARTICLE_CHECK_AI_PROVIDER`
 - `DIFY_BASE_URL`
 - `DIFY_API_KEY`
-- `DIFY_APP_TYPE`
-- `DIFY_RESPONSE_MODE`
+- `ARTICLE_CHECK_DIFY_DOCUMENT_READ_API_KEY`
+- `ARTICLE_CHECK_DIFY_COMPONENT_CLASSIFICATION_API_KEY`
+- `ARTICLE_CHECK_DIFY_FORMAT_REVIEW_API_KEY`
+- `ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_API_KEY`
+- `ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_API_KEY`
+- `ARTICLE_CHECK_DIFY_REPORT_GENERATION_API_KEY`
+- `ARTICLE_CHECK_DIFY_REPORT_QA_API_KEY`
+- `DEEPSEEK_API_KEY`（如启用深审兜底）
 - `ARTICLE_CHECK_PLATFORM_AUTH_ENABLED`
 - `ARTICLE_CHECK_PLATFORM_AUTH_MODE`
-- `ARTICLE_CHECK_PLATFORM_AUTH_API_BASE`
 - `ARTICLE_CHECK_PLATFORM_AUTH_HOST`
-- `ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH`
-- `ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX`
 - `PLATFORM_AUTH_PROXY_TARGET`
 - `PLATFORM_AUTH_PROXY_HOST_HEADER`
 
-如果本次部署不启用平台官方认证，可根据实际场景关闭或调整对应认证变量。
+### Dify 工作流对应关系
 
-如需显式控制后端授权行为，还可以按需补充以下可选变量：
+当前交付版使用以下工作流：
 
-- `ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API`
-- `ARTICLE_CHECK_PLATFORM_AUTH_GATEWAY_BASE_URL`
-- `ARTICLE_CHECK_PLATFORM_AUTH_CACHE_TTL_SECONDS`
-- `ARTICLE_CHECK_PLATFORM_AUTH_TIMEOUT_SECONDS`
+- 文档读取：`dbvfR3MQYfPPlHkJ`
+- 部件识别：`SNjqCn9fZbIzG81x`
+- 格式审查：`qqiz0GZOcbetK35r`
+- 参考文献核验：`xOFCPi2VzmpI6fv1`
+- 幻觉审查：`nVRkoJaJkj4MeQQT`
+- 报告生成：`Skfvt4amRApAvTTX`
+- 报告问答：`Jmem7t2HPs6j4xA3`
 
-## 安全说明
-
-当前 GitHub 交付仓不会包含以下内容：
-
-- 真实的 `app/.env.platform`
-- Dify / DeepSeek / 平台认证密钥
-- 离线镜像 `.tar` 大文件
-
-这些内容需要在实际部署环境中单独准备。
-
-## 默认访问方式
-
-在线或离线 Docker 启动后，默认访问方式如下：
-
-- 前端入口：`http://localhost:3000`
-- 后端健康检查：`http://localhost:3000/api/health`
-- 系统状态：`http://localhost:3000/api/status`
-
-如果修改了端口映射，请以 `app/docker-compose*.yml` 和环境变量中的端口为准。
-
-## 核心接口
-
-当前交付版最常用的接口如下：
+## 功能使用说明
 
 ### 1. 上传论文
 
-- `POST /api/upload`
+入口：前端“开始检查”页面。
 
-用途：
+支持上传：
 
-- 上传 `docx / pdf / tex` 文件，返回服务端存储路径
+- `docx`
+- `pdf`
+- `tex / ltx`
+
+上传后可以：
+
+- 删除已选文件
+- 直接开始单篇检查
+- 连续检查多篇
+- 选择是否开启更细致的内容与表达检查
 
 ### 2. 启动审查
 
-- `POST /api/review`
+系统默认通过 `/api/review` 发起统一审查。
 
-用途：
+审查链路为：
 
-- 对单篇论文执行完整审查，返回统一审查结果
+1. 解析证据包
+2. 本地确定性审计
+3. 分层核验
+4. Dify 文档读取
+5. Dify 部件识别
+6. Dify 格式/文献/幻觉审查
+7. Dify 报告生成
 
-常见请求字段：
+当 Dify 某个环节异常时，系统会保留本地回退结果，不会让主接口直接中断。
 
-- `paper_path`
-- `template`
-- `depth`
-- `with_deep_review`
-- `review_focus`
-- `report_focus`
+### 3. 查看问题依据与定位
 
-### 3. 深度审查
+结果页支持：
 
-- `POST /api/review/deep`
+- 按严重程度查看问题
+- 点击“定位原文”
+- 查看对应片段
+- 查看 evidence card 高亮状态
+- 对当前问题继续追问
 
-用途：
+LaTeX、DOCX、PDF 都会尽量返回结构化定位信息；结构缺失类问题通常会定位到章节级，行级问题会定位到具体焦点行。
 
-- 对已上传论文执行更细致的深度审查
+### 4. 正式报告预览与导出
 
-### 4. 批量流式审查
+系统会生成正式报告 HTML，可用于：
 
-- `POST /api/review/batch-stream`
+- 页面预览
+- 打印
+- 导出 PDF
 
-用途：
+当前正式报告已经做过这些优化：
 
-- 对多篇论文连续审查并返回流式结果
+- 文件名代替任务 ID
+- 严重级别按 `critical -> major -> minor -> info`
+- 不再显示空定位提示
+- 审查耗时会截断格式化
 
 ### 5. 报告问答
 
-- `POST /api/report/dialogue`
+围绕当前报告，可以继续向系统追问：
 
-用途：
+- 哪些问题最影响送审
+- 应该先改哪几项
+- 某条证据为什么被判定为问题
+- 参考文献最先该补什么
 
-- 围绕当前审查报告继续追问重点问题、证据依据和修改建议
+## 核心接口
 
-### 6. 原文定位片段
+最常用接口如下：
 
+- `POST /api/upload`
+- `POST /api/review`
+- `POST /api/review/deep`
+- `POST /api/review/batch-stream`
+- `POST /api/classify/components`
+- `POST /api/parse/evidence-bundle`
+- `POST /api/audit/deterministic`
+- `POST /api/verify/layered`
 - `POST /api/report/source-snippet`
-
-用途：
-
-- 根据 `evidence_id` 返回对应原文片段、锚点信息和定位摘要
-
-### 7. 正式报告文件
-
+- `POST /api/report/dialogue`
 - `GET /api/report/file`
-
-用途：
-
-- 读取正式报告 HTML 文件，供浏览器预览、打印和导出 PDF
-
-### 8. 平台认证配置
-
 - `GET /api/platform-auth-config`
-
-用途：
-
-- 返回前端认证脚本所需的平台认证配置
-
-### 9. 当前认证会话
-
 - `GET /api/auth/session`
-
-用途：
-
-- 返回当前请求关联的平台认证状态，便于部署联调时确认后端是否已经识别并校验用户令牌
+- `GET /api/status`
 
 ## 平台认证说明
 
-当前交付版已按项目方官方认证脚本的接入方式完成联动：
+当前交付版默认按项目方认证方式运行：
 
-- 前端 `public/auth.js` 会在平台登录成功后自动为 `/prod-api/*` 和本系统 `/api/*` 请求附加认证头
-- 后端 `article_check/web/server.py` 在启用平台认证时会对业务接口执行令牌校验
-- `GET /api/health`、`GET /api/status`、`GET /api/platform-auth-config`、`GET /api/report/file` 默认保留为可直接访问接口，便于健康检查、状态查看和报告预览
+- 模式：`legacy_oauth`
+- 网关：`http://124.71.226.114:8444`
+- 前端认证脚本：`app/article_check/web/frontend/public/auth.js`
+- 后端认证入口：`app/article_check/web/server.py`
 
-若部署时希望后端不拦截业务接口，可将 `ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API=false`。
+Nginx 会转发：
 
-## 启动后建议做的最小检查
+- `/api/*` -> FastAPI
+- `/prod-api/*` -> 平台认证网关
 
-部署完成后，建议至少检查以下项目：
+对应模板文件：
 
-1. 打开首页是否正常显示
-2. `GET /api/health` 是否返回健康状态
-3. `GET /api/status` 是否能看到 Dify 注册状态
-4. 登录平台后访问 `GET /api/auth/session`，确认 `validated` 为 `true`
-5. 上传一篇论文后，`/api/review` 是否能返回审查结果
-6. 报告页中证据定位和报告问答是否正常
+- [app/nginx/default.conf.template](file:///e:/cocoon/projects/article_check/.publish_tmp/paper_check_agent_latest_20260715/app/nginx/default.conf.template)
 
-## 停止服务
+## 镜像包与 Nginx 检查结论
 
-可直接运行：
+### 镜像包
+
+当前仓库中的 `镜像包/` 目录状态正常：
+
+- 已保留说明文档
+- 已保留哈希清单
+- 没有把大体积 `.tar` 镜像误提交进 Git
+
+### Nginx
+
+当前 `app/nginx/default.conf.template` 已覆盖这些能力：
+
+- `/api/` 反代 FastAPI
+- `/prod-api/` 反代平台认证网关
+- SPA 路由回落到 `index.html`
+- 静态资源缓存
+- 基础安全响应头
+
+## 发布前检查
+
+建议发布前至少执行这些检查：
 
 ```powershell
-.\一键停止.ps1
+python -m py_compile app/article_check/dify_review.py app/article_check/runtime.py app/article_check/web/server.py
+docker compose -f app/docker-compose.platform.yml --env-file app/.env.platform config
 ```
 
-或手动执行：
+如果要重新构建前端：
 
 ```powershell
-cd app
-docker compose -f docker-compose.platform.yml --env-file .env.platform down
+cd app/article_check/web/frontend
+npm install
+npm run build
 ```
 
-## 应用目录补充说明
+## 安全说明
 
-更详细的应用目录和文件说明，见：
+当前 Git 仓库不会提交：
 
-- [app/README.md](file:///e:/cocoon/projects/article_check/交付版/app/README.md)
+- 真实 `app/.env.platform`
+- 真实 Dify / DeepSeek 密钥
+- 离线镜像 `.tar`
+- 本地缓存、`node_modules`、`__pycache__`
+
+## 维护建议
+
+1. 真实密钥只保存在仓库外部
+2. 交付部署优先使用 `app/`
+3. 在线部署优先 `docker-compose.platform.yml`
+4. 离线部署优先 `docker-compose.offline.yml`
+5. 接口排查优先查看 `app/article_check/web/server.py`
+
+## 许可证
+
+MIT

@@ -1,90 +1,145 @@
-# ArticleCheck App
+# ArticleCheck 应用目录说明
 
-`app/` 是交付包中的实际运行目录。无论是在线 Docker、离线 Docker，还是 Python 虚拟环境方式启动，应用代码和配置都从这里读取。
+`app/` 是交付仓中真正用于部署的主目录。无论你走在线 Docker、离线 Docker，还是 Python 虚拟环境，最终都以这里的文件为准。
 
 ## 目录结构
 
 ```text
 app/
-├── article_check/               # 主应用代码
-├── dify_dsl/                    # Dify 工作流 DSL
-├── 北师大论文格式要求/            # 审查规则资产
-├── nginx/                       # Nginx 配置
-├── Dockerfile                   # 应用镜像构建文件
-├── docker-compose.yml           # 本地调试编排
-├── docker-compose.platform.yml  # 在线部署编排
-├── docker-compose.offline.yml   # 离线部署编排
-├── .dockerignore                # Docker 构建上下文控制
-├── .env.example                 # 本地运行模板
-├── .env.docker                  # 本地 Docker 模板
-├── .env.platform.example        # 平台部署模板
-├── .env.platform                # 部署时本地生成，不随仓库提交
-├── pyproject.toml               # Python 包元数据
-├── requirements.txt             # Python 依赖
-├── dify_api.example.md          # Dify 配置模板
-└── README.md                    # 当前文档
+├── article_check/                  # 后端代码、前端源码、规则与编排主目录
+├── dify_dsl/                       # Dify 工作流 DSL
+├── nginx/                          # Nginx 模板
+├── 北师大论文格式要求/             # 规则资产
+├── Dockerfile                      # 应用镜像构建文件
+├── docker-compose.yml              # 本地调试编排
+├── docker-compose.platform.yml     # 在线平台部署
+├── docker-compose.offline.yml      # 离线部署
+├── .env.example                    # 本地环境模板
+├── .env.docker                     # Docker 调试模板
+├── .env.platform.example           # 平台部署模板
+├── requirements.txt                # Python 依赖
+└── README.md                       # 当前文档
 ```
 
-## 关键入口
+## 先看哪几个文件
 
-最常用的几个入口文件如下：
+如果你是第一次接手，建议按这个顺序看：
 
-- `article_check/web/server.py`
-  FastAPI 主入口，上传、审查、报告、定位、问答、认证配置都从这里出去。
-- `article_check/dify_review.py`
-  Dify 多工作流主链，包括工作流绑定、规则注入、审查串联和容错回退。
-- `article_check/runtime.py`
-  本地运行时主入口，用于不依赖 Dify 或 Dify 回退时的装配逻辑。
-- `article_check/web/frontend/`
-  React 前端目录，当前交付版已经同步为最新页面版本。
+1. `docker-compose.platform.yml`
+2. `.env.platform.example`
+3. `article_check/web/server.py`
+4. `article_check/dify_review.py`
+5. `nginx/default.conf.template`
 
-## 前端目录
+## 当前主链说明
 
-```text
-article_check/web/frontend/
-├── src/       # 前端源码
-├── public/    # 静态文件与 auth.js
-├── dist/      # 构建后的静态产物
-└── package.json
+系统当前已经收束为 component-first 审查链路：
+
+1. 解析证据包
+2. 本地确定性审计
+3. 分层核验
+4. Dify 文档读取
+5. Dify 部件识别
+6. Dify 格式 / 文献 / 幻觉审查
+7. Dify 报告生成
+
+即使 Dify 某一环节暂时不可用，后端也会保留本地回退，不会让主接口直接失效。
+
+## 部署方式
+
+### 在线 Docker
+
+```powershell
+Copy-Item .env.platform.example .env.platform
+docker compose -f docker-compose.platform.yml --env-file .env.platform up -d --build
 ```
 
-<br />
+### 离线 Docker
 
-## 后端核心接口
+先把镜像 `.tar` 放到仓库根目录的 `镜像包/`，再执行：
 
-最常用的后端接口：
+```powershell
+docker compose -f docker-compose.offline.yml --env-file .env.platform up -d
+```
+
+### Python 虚拟环境
+
+```powershell
+python -m venv .venv
+. .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+python -m article_check.web.server
+```
+
+## 环境变量原则
+
+- 仓库模板不带真实密钥
+- 真实值请单独保管在仓库外部
+- 部署时再复制到 `.env.platform`
+
+建议至少填写这些值：
+
+- `DIFY_API_KEY`
+- `ARTICLE_CHECK_DIFY_DOCUMENT_READ_API_KEY`
+- `ARTICLE_CHECK_DIFY_COMPONENT_CLASSIFICATION_API_KEY`
+- `ARTICLE_CHECK_DIFY_FORMAT_REVIEW_API_KEY`
+- `ARTICLE_CHECK_DIFY_REFERENCE_VERIFY_API_KEY`
+- `ARTICLE_CHECK_DIFY_HALLUCINATION_REVIEW_API_KEY`
+- `ARTICLE_CHECK_DIFY_REPORT_GENERATION_API_KEY`
+- `ARTICLE_CHECK_DIFY_REPORT_QA_API_KEY`
+- `DEEPSEEK_API_KEY`
+- `ARTICLE_CHECK_PLATFORM_AUTH_HOST`
+
+## 功能入口
+
+最常用功能如下：
+
+- 上传论文
+- 启动审查
+- 深度审查
+- 查看问题依据与定位
+- 预览正式报告
+- 基于当前报告继续追问
+
+对应接口：
 
 - `POST /api/upload`
 - `POST /api/review`
 - `POST /api/review/deep`
-- `POST /api/review/batch-stream`
-- `POST /api/report/dialogue`
+- `POST /api/classify/components`
 - `POST /api/report/source-snippet`
+- `POST /api/report/dialogue`
 - `GET /api/report/file`
-- `GET /api/status`
-- `GET /api/health`
-- `GET /api/platform-auth-config`
-- `GET /api/auth/session`
 
-## Dify 相关文件
+## 认证与 Nginx
 
-- `dify_dsl/`
-  当前交付版内置了 Dify 工作流 DSL 文件。
-- `dify_api.example.md`
-  用于登记和说明 Dify 相关配置的模板文件。
-- `.env.platform.example`
-  平台部署模板。实际部署时请先复制生成 `.env.platform`，再填写真实变量。
+当前默认认证模式：
 
-## 本地构建参考
+- `legacy_oauth`
+- 认证网关：`http://124.71.226.114:8444`
 
-后端：
+Nginx 模板负责：
+
+- `/api/*` -> FastAPI
+- `/prod-api/*` -> 平台认证网关
+- SPA 路由回退
+- 静态资源缓存
+
+模板文件：
+
+- `nginx/default.conf.template`
+
+## 发布前自检
+
+建议至少运行：
 
 ```powershell
-pip install -r requirements.txt
-python -m article_check.web.server
+python -m py_compile article_check/dify_review.py article_check/runtime.py article_check/web/server.py
+docker compose -f docker-compose.platform.yml --env-file .env.platform config
 ```
 
-前端：
+如果前端有更新：
 
 ```powershell
 cd article_check/web/frontend
@@ -92,47 +147,16 @@ npm install
 npm run build
 ```
 
-Docker：
+## 注意事项
 
-```powershell
-docker compose -f docker-compose.platform.yml --env-file .env.platform up -d --build
-```
+不要提交以下内容：
 
-## 平台认证与后端授权
+- 真实 `.env.platform`
+- Dify / DeepSeek 真实密钥
+- 离线镜像 `.tar`
+- `node_modules`
+- `__pycache__`
 
-当前交付版已经把平台认证从“仅前端登录”补齐为“前后端联动授权”：
+## 许可证
 
-- 前端认证脚本位于 `article_check/web/frontend/public/auth.js`
-- 后端认证校验入口位于 `article_check/web/server.py`
-- 当前配置下，前端会给 `/api/*` 和 `/prod-api/*` 请求附加认证头
-- 后端会在 `ARTICLE_CHECK_PLATFORM_AUTH_ENABLED=true` 且 `ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API=true` 时校验业务接口令牌
-
-常用平台认证变量：
-
-- `ARTICLE_CHECK_PLATFORM_AUTH_ENABLED`
-- `ARTICLE_CHECK_PLATFORM_AUTH_MODE`
-- `ARTICLE_CHECK_PLATFORM_AUTH_API_BASE`
-- `ARTICLE_CHECK_PLATFORM_AUTH_HOST`
-- `ARTICLE_CHECK_PLATFORM_AUTH_CALLBACK_PATH`
-- `ARTICLE_CHECK_PLATFORM_AUTH_STORAGE_PREFIX`
-- `PLATFORM_AUTH_PROXY_TARGET`
-- `PLATFORM_AUTH_PROXY_HOST_HEADER`
-
-可选高级变量：
-
-- `ARTICLE_CHECK_PLATFORM_AUTH_ENFORCE_API`
-- `ARTICLE_CHECK_PLATFORM_AUTH_GATEWAY_BASE_URL`
-- `ARTICLE_CHECK_PLATFORM_AUTH_CACHE_TTL_SECONDS`
-- `ARTICLE_CHECK_PLATFORM_AUTH_TIMEOUT_SECONDS`
-
-建议联调时先检查：
-
-1. `GET /api/platform-auth-config`
-2. `GET /api/auth/session`
-3. `POST /api/review`
-
-## 说明
-
-如果你是从交付包根目录进入，请优先查看：
-
-- [../README.md](file:///e:/cocoon/projects/article_check/交付版/README.md)
+MIT

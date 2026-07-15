@@ -100,6 +100,60 @@ def _format_location_text(location: Any) -> str:
     return str(location)
 
 
+def _format_duration_label(value: Any) -> str:
+    try:
+        seconds = float(value or 0.0)
+    except Exception:
+        return str(value or "0.0000 秒")
+    return f"{seconds:.4f} 秒"
+
+
+def _display_file_name(summary: Dict[str, Any], paper_title: str) -> str:
+    source_name = str(summary.get("source_file_name") or "").strip()
+    if source_name:
+        return source_name
+    return str(paper_title or "未命名论文")
+
+
+def _format_report_location(location: Any) -> str:
+    text = _format_location_text(location)
+    return "" if text == "未提供定位信息" else text
+
+
+def _coerce_issue_location(issue: Dict[str, Any]) -> Dict[str, Any]:
+    location = issue.get("location")
+    if isinstance(location, dict) and location:
+        return location
+    normalized: Dict[str, Any] = {}
+    for key in ("page", "line", "column", "section", "paragraph_index", "anchor_id", "block_id"):
+        value = issue.get(key)
+        if value not in (None, "", [], {}):
+            normalized[key] = value
+    return normalized
+
+
+def _severity_rank(severity: Any) -> int:
+    order = {
+        "critical": 0,
+        "major": 1,
+        "minor": 2,
+        "info": 3,
+    }
+    return order.get(str(severity or "info").strip().lower(), 4)
+
+
+def _sort_findings_by_severity(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(
+        items or [],
+        key=lambda item: (
+            _severity_rank(item.get("severity")),
+            str(item.get("category") or ""),
+            str(item.get("type") or ""),
+            str(item.get("description") or ""),
+        ),
+    )
+
+
 def _safe_report_stem(value: str, fallback: str = "report") -> str:
     """将展示标题转换为安全的报告目录/文件名。"""
 
@@ -328,7 +382,7 @@ def _extract_findings(result: PipelineResult) -> List[Dict[str, Any]]:
                 "type": issue.get("type", "format_issue"),
                 "description": issue.get("description", ""),
                 "suggestion": issue.get("suggestion"),
-                "location": issue.get("location") or {},
+                "location": _coerce_issue_location(issue),
             }
         )
 
@@ -375,13 +429,13 @@ def _extract_findings(result: PipelineResult) -> List[Dict[str, Any]]:
                 }
             )
 
-    return findings
+    return _sort_findings_by_severity(findings)
 
 
 def build_evidence_records(result: PipelineResult) -> List[EvidenceRecord]:
     """从 PipelineResult 导出轻量证据记录。"""
 
-    findings = _extract_findings(result)
+    findings = _sort_findings_by_severity(_extract_findings(result))
     evidence: List[EvidenceRecord] = []
     for index, finding in enumerate(findings, start=1):
         evidence.append(
@@ -430,7 +484,7 @@ def _attach_evidence_ids(items: List[Dict[str, Any]], evidence_records: List[Dic
 def build_review_payload(result: PipelineResult, *, plan_id: str = "cli-plan") -> Dict[str, Any]:
     """构建供 Web / VSCode 插件消费的统一报告格式。"""
 
-    findings = _extract_findings(result)
+    findings = _sort_findings_by_severity(_extract_findings(result))
     evidence = [asdict(record) for record in build_evidence_records(result)]
     findings = _attach_evidence_ids(findings, evidence)
     report_markdown_path = None
@@ -465,6 +519,7 @@ def build_review_payload(result: PipelineResult, *, plan_id: str = "cli-plan") -
             "overall_score": result.overall_score,
             "duration": result.duration,
             "errors": result.errors,
+            "source_file_name": result.source_file_name or (Path(result.source_paper_path).name if result.source_paper_path else ""),
         },
     )
     advice_report = generate_advice_report(findings, result.paper_title)
@@ -667,13 +722,14 @@ def generate_formal_review_report(
         f"- [{record.get('severity', 'info')}] {record.get('claim', '')} | 位置: {record.get('location', {})}"
         for record in evidence_records[:20]
     ]
+    duration_label = _format_duration_label(summary.get("duration"))
 
     md_lines = [
         f"# 正式审改报告：{paper_title}",
         "",
         "## 一、执行摘要",
         f"- 综合评分：{summary.get('overall_score')}",
-        f"- 审查耗时：{summary.get('duration')}",
+        f"- 审查耗时：{duration_label}",
         f"- 问题总数：{len(findings)}",
         f"- 运行错误数：{len(summary.get('errors', []))}",
         "",
@@ -718,8 +774,9 @@ def generate_formal_review_report(
         "major": len([item for item in findings if item.get("severity") == "major"]),
         "minor": len([item for item in findings if item.get("severity") == "minor"]),
     }
-    paper_title_safe = safe(paper_title)
-    task_id_safe = safe(summary.get("task_id", paper_title))
+    display_name = _display_file_name(summary, paper_title)
+    paper_title_safe = safe(display_name)
+    task_id_safe = safe(display_name)
     conclusion_text = (
         "建议优先修复格式与文献的 critical / major 问题，再进行提交前复审。"
         if severity_counts["critical"] or severity_counts["major"]
@@ -736,7 +793,7 @@ def generate_formal_review_report(
     ]
     summary_rows = "".join([
         f"<tr><th>报告编号</th><td>{task_id_safe}</td><th>综合评分</th><td>{safe(summary.get('overall_score'))}</td></tr>",
-        f"<tr><th>审查耗时</th><td>{safe(summary.get('duration'))}</td><th>问题总数</th><td>{len(findings)}</td></tr>",
+        f"<tr><th>审查耗时</th><td>{safe(duration_label)}</td><th>问题总数</th><td>{len(findings)}</td></tr>",
         f"<tr><th>Critical</th><td>{severity_counts['critical']}</td><th>Major / Minor</th><td>{severity_counts['major']} / {severity_counts['minor']}</td></tr>",
     ])
     risk_matrix_rows = "".join(
@@ -749,13 +806,13 @@ def generate_formal_review_report(
     for category, items in grouped.items():
         rows = []
         for item in items[:10]:
-            location_text = _format_location_text(item.get("location"))
+            location_text = _format_report_location(item.get("location"))
             rows.append(
                 f"""
                 <tr>
                   <td><span class="severity severity-{safe(item.get('severity', 'info'))}">{safe(item.get('severity', 'info'))}</span></td>
                   <td>{safe(item.get('description', ''))}</td>
-                  <td>{safe(location_text)}</td>
+                  <td>{safe(location_text or '-')}</td>
                   <td>{safe(item.get('suggestion') or '请人工复核后修订')}</td>
                 </tr>
                 """
@@ -790,16 +847,16 @@ def generate_formal_review_report(
                     f"章节 {location.get('section')}" if location.get("section") else "",
                 ]
             ).strip(" ·")
-            location_text = location_text or "未提供定位信息"
+            location_text = location_text or ""
         else:
-            location_text = _format_location_text(location)
+            location_text = _format_report_location(location)
         evidence_cards.append(
             f"""
             <article class="evidence-card">
               <div class="evidence-meta">
                 <span class="severity severity-{safe(record.get('severity', 'info'))}">{safe(record.get('severity', 'info'))}</span>
                 <span>{safe(record.get('stage', '-'))}</span>
-                <span>{safe(location_text)}</span>
+                {'<span>' + safe(location_text) + '</span>' if location_text else ''}
               </div>
               <h3>{safe(record.get('claim', ''))}</h3>
               <p>{safe(record.get('suggestion') or '建议人工复核后修订')}</p>
@@ -1115,7 +1172,7 @@ def generate_formal_review_report(
             <tbody>
               <tr><th>报告编号</th><td>{task_id_safe}</td></tr>
               <tr><th>审查对象</th><td>{paper_title_safe}</td></tr>
-              <tr><th>审查时间</th><td>{safe(summary.get('duration'))}</td></tr>
+              <tr><th>审查时间</th><td>{safe(duration_label)}</td></tr>
               <tr><th>送审结论</th><td>{safe(conclusion_text)}</td></tr>
               <tr><th>学生信息</th><td>待填写</td></tr>
               <tr><th>导师信息</th><td>待填写</td></tr>
@@ -1142,7 +1199,7 @@ def generate_formal_review_report(
             <div class="metric"><div class="metric-label">综合评分</div><div class="metric-value">{safe(summary.get('overall_score'))}</div></div>
             <div class="metric"><div class="metric-label">问题总数</div><div class="metric-value">{len(findings)}</div></div>
             <div class="metric"><div class="metric-label">Evidence</div><div class="metric-value">{len(evidence_records)}</div></div>
-            <div class="metric"><div class="metric-label">审查耗时</div><div class="metric-value">{safe(summary.get('duration'))}</div></div>
+            <div class="metric"><div class="metric-label">审查耗时</div><div class="metric-value">{safe(duration_label)}</div></div>
           </div>
         </div>
         <div class="hero-score">

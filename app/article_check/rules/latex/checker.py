@@ -52,6 +52,12 @@ class LaTeXChecker:
         "citation_style",     # 引用格式是否一致
         "bibliography_style", # 参考文献格式
     ]
+    IGNORED_MESSAGE_PATTERNS = [
+        re.compile(r"line\s*break", re.IGNORECASE),
+        re.compile(r"trailing\s*\\\\", re.IGNORECASE),
+        re.compile(r"行尾.*换行", re.IGNORECASE),
+        re.compile(r"多余换行", re.IGNORECASE),
+    ]
 
     def __init__(self, config_path: Optional[str] = None):
         self.config_path = config_path
@@ -103,12 +109,13 @@ class LaTeXChecker:
     def _parse_chktex_output(self, output: str) -> List[Dict[str, Any]]:
         """解析 chktex 的输出"""
         issues = []
+        seen = set()
         for line in output.strip().split("\n"):
             if not line.strip():
                 continue
             parts = line.split(":")
             if len(parts) >= 5:
-                issues.append({
+                issue = {
                     "type": "latex_format",
                     "rule_id": int(parts[0]) if parts[0].isdigit() else 0,
                     "line": int(parts[1]) if parts[1].isdigit() else 0,
@@ -116,7 +123,19 @@ class LaTeXChecker:
                     "severity": "minor",
                     "description": parts[3] if len(parts) > 3 else "",
                     "suggestion": self.CHKTEX_RULES.get(int(parts[0]) if parts[0].isdigit() else 0, ""),
-                })
+                }
+                if self._should_ignore_issue(issue):
+                    continue
+                issue_key = (
+                    issue.get("rule_id"),
+                    issue.get("line"),
+                    issue.get("column"),
+                    issue.get("description"),
+                )
+                if issue_key in seen:
+                    continue
+                seen.add(issue_key)
+                issues.append(issue)
         return issues
 
     def _basic_regex_check(self, file_path: str) -> List[Dict[str, Any]]:
@@ -127,22 +146,36 @@ class LaTeXChecker:
         checks = [
             (r"\$\$", "不要使用 $$，应使用 \\[ ... \\]", "minor"),
             (r"\\eqnarray", "避免使用 eqnarray，应使用 align", "minor"),
-            (r"\\\\\s*\n", "行尾多余换行", "minor"),
             (r"``[^']*''", "引号格式检查", "info"),
         ]
 
+        seen = set()
         for pattern, msg, severity in checks:
             matches = re.finditer(pattern, text)
             for m in matches:
-                issues.append({
+                issue = {
                     "type": "latex_basic",
                     "line": text[:m.start()].count("\n") + 1,
                     "description": msg,
                     "severity": severity,
                     "suggestion": msg,
-                })
+                }
+                if self._should_ignore_issue(issue):
+                    continue
+                issue_key = (issue.get("line"), issue.get("description"))
+                if issue_key in seen:
+                    continue
+                seen.add(issue_key)
+                issues.append(issue)
 
         return issues
+
+    def _should_ignore_issue(self, issue: Dict[str, Any]) -> bool:
+        text = " ".join(
+            str(issue.get(key) or "")
+            for key in ("description", "suggestion", "message")
+        )
+        return any(pattern.search(text) for pattern in self.IGNORED_MESSAGE_PATTERNS)
 
     def _check_chktex(self) -> bool:
         """检查 chktex 是否可用"""

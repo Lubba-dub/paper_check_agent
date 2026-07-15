@@ -197,71 +197,159 @@ class ReferenceParser:
 
     @staticmethod
     def from_docx(doc_path: str) -> List[Reference]:
-        """从 Word 文档参考文献段落提取（支持中英文混合格式）"""
+        """从 Word 文档参考文献段落提取（支持多行条目合并与类型识别）"""
         refs = []
         try:
             from docx import Document
             doc = Document(doc_path)
-            in_refs = False
-            ref_pattern = re.compile(r'^\[(\d+)\]\s*(.+?)[.。]?\s*(19|20)\d{2}')
-            author_pattern = re.compile(r'^([A-Z][a-z]+(?:\s[A-Z]\.?)?(?:，|,\s*[A-Z][a-z]+)*)')
-
-            for para in doc.paragraphs:
-                text = para.text.strip()
-                if not text:
-                    continue
-                lower = text.lower()
-                if any(kw in lower for kw in ["参考文献", "references", "bibliography", "reference"]):
-                    in_refs = True
-                    continue
-                if not in_refs or len(text) < 10:
-                    continue
-
-                ref = Reference(raw_text=text, source="docx")
-
-                # 提取编号
-                num_match = re.match(r'\[(\d+)\]', text)
-                ref.ref_id = f"ref_{num_match.group(1)}" if num_match else f"ref_{len(refs)+1}"
-
-                # 去除编号前缀
-                body = re.sub(r'^\[\d+\]\s*', '', text)
-
-                # 提取作者（英文名 pattern: "Author A., Author B." 或中文 "作者A，作者B"）
-                # 中文: 用"，"或", "分隔多个作者
-                author_text = re.split(r'[.。]\s*(?:\[|In|in|\d{4}|20|19)', body)[0].strip()
-                if author_text:
-                    # 尝试分割作者
-                    parts = re.split(r'[，,]\s*(?=[A-Z一-鿿])', author_text)
-                    ref.authors = [p.strip() for p in parts if len(p) > 1][:10]
-
-                # 提取标题（在作者后、年份前）
-                title_match = re.search(r'(?:\.\s*)([^。]+(?:\.[^。]{3,})?)(?:[.。]\s*(?:19|20)\d{2})', body)
-                if title_match:
-                    ref.title = title_match.group(1).strip()[:200]
-                else:
-                    # 后备: 作者后的内容到年份前
-                    title_text = re.sub(r'^[^.]+\s*[.。]\s*', '', body)
-                    year_match = re.search(r'(?:19|20)\d{2}', title_text)
-                    if year_match:
-                        ref.title = title_text[:year_match.start()].strip()[:200]
-                    else:
-                        ref.title = body[:100]
-
-                # 提取年份
-                year_match = re.search(r'(19|20)\d{2}', body)
-                if year_match:
-                    ref.year = int(year_match.group())
-
-                # 提取 DOI
-                doi_match = re.search(r'(10\.\d{4,}/[-._;()/:A-Za-z0-9]+)', body)
-                if doi_match:
-                    ref.doi = doi_match.group(1)
-
-                refs.append(ref)
+            entries = ReferenceParser._extract_docx_reference_entries(doc)
+            for index, entry in enumerate(entries, start=1):
+                ref = ReferenceParser._parse_reference_entry(entry, index=index)
+                if ref:
+                    refs.append(ref)
             return refs
         except Exception as e:
             logger.error(f"Word 文献提取失败: {e}")
             return []
+
+    @staticmethod
+    def extract_body_text(doc_path: str) -> str:
+        """提取正文文本，尽量排除参考文献区，避免把文献编号当成正文引文。"""
+        try:
+            from docx import Document
+            doc = Document(doc_path)
+        except Exception:
+            return ""
+
+        body_lines: List[str] = []
+        in_refs = False
+        stop_norms = {"致谢", "附录", "appendix", "acknowledgements", "acknowledgments"}
+
+        for block in ReferenceParser._iter_docx_text_blocks(doc):
+            text = block.strip()
+            if not text:
+                continue
+            normalized = ReferenceParser._normalize_inline_text(text).rstrip(":：")
+            if normalized in {"参考文献", "references", "bibliography"}:
+                in_refs = True
+                continue
+            if in_refs:
+                if normalized in stop_norms:
+                    in_refs = False
+                continue
+            body_lines.append(text)
+        return "\n".join(body_lines)
+
+    @staticmethod
+    def _iter_docx_text_blocks(doc) -> List[str]:
+        para_map = {id(para._p): para for para in doc.paragraphs}
+        table_map = {id(table._tbl): table for table in doc.tables}
+        blocks: List[str] = []
+
+        for child in doc.element.body.iterchildren():
+            tag = child.tag.split("}")[-1]
+            if tag == "p" and id(child) in para_map:
+                text = para_map[id(child)].text.strip()
+                if text:
+                    blocks.append(text)
+            elif tag == "tbl" and id(child) in table_map:
+                table = table_map[id(child)]
+                for row in table.rows:
+                    row_cells = [" ".join(p.text.strip() for p in cell.paragraphs if p.text and p.text.strip()) for cell in row.cells]
+                    row_text = " ".join(item.strip() for item in row_cells if item and item.strip()).strip()
+                    if row_text:
+                        blocks.append(row_text)
+        return blocks
+
+    @staticmethod
+    def _extract_docx_reference_entries(doc) -> List[str]:
+        lines = ReferenceParser._iter_docx_text_blocks(doc)
+        in_refs = False
+        collected: List[str] = []
+
+        for line in lines:
+            normalized = ReferenceParser._normalize_inline_text(line).rstrip(":：")
+            if normalized in {"参考文献", "references", "bibliography"}:
+                in_refs = True
+                continue
+            if not in_refs:
+                continue
+            if normalized in {"致谢", "附录", "appendix", "acknowledgements", "acknowledgments"}:
+                break
+            if len(line.strip()) < 2:
+                continue
+            collected.append(line.strip())
+
+        entries: List[str] = []
+        current = ""
+        entry_start = re.compile(r"^\s*(\[(\d+)\]|(\d+)[.、])\s*")
+        for line in collected:
+            if entry_start.match(line):
+                if current:
+                    entries.append(current.strip())
+                current = line.strip()
+            elif current:
+                current = f"{current} {line.strip()}".strip()
+            else:
+                current = line.strip()
+        if current:
+            entries.append(current.strip())
+        return entries
+
+    @staticmethod
+    def _parse_reference_entry(text: str, *, index: int) -> Optional[Reference]:
+        if not text:
+            return None
+
+        ref = Reference(raw_text=text.strip(), source="docx")
+        num_match = re.match(r"^\s*(?:\[(\d+)\]|(\d+)[.、])\s*", text)
+        numeric_id = next((group for group in num_match.groups() if group), None) if num_match else None
+        ref.ref_id = numeric_id or str(index)
+        body = re.sub(r"^\s*(?:\[\d+\]|\d+[.、])\s*", "", text).strip()
+
+        doi_match = re.search(r"(10\.\d{4,}/[-._;()/:A-Za-z0-9]+)", body, re.IGNORECASE)
+        if doi_match:
+            ref.doi = doi_match.group(1)
+        url_match = re.search(r"(https?://\S+)", body, re.IGNORECASE)
+        if url_match:
+            ref.url = url_match.group(1)
+        year_match = re.search(r"(19|20)\d{2}", body)
+        if year_match:
+            ref.year = int(year_match.group())
+
+        ref.bibtex_type = ReferenceValidator.infer_reference_type(
+            raw_text=body,
+            title="",
+            journal="",
+            booktitle="",
+            publisher="",
+        )
+
+        sentence_parts = [part.strip(" .。；;") for part in re.split(r"[.。]\s*", body) if part.strip(" .。；;")]
+        if sentence_parts:
+            author_text = sentence_parts[0]
+            author_parts = re.split(r"[，,、;；]\s*", author_text)
+            ref.authors = [item.strip() for item in author_parts if len(item.strip()) > 1][:10]
+        if len(sentence_parts) >= 2:
+            ref.title = sentence_parts[1][:240]
+        else:
+            title_match = re.search(r"(?:(?:19|20)\d{2}[,，]?\s*)?(.+?)(?:\[?[JMDBSENCP/OL]+\]?|$)", body)
+            ref.title = (title_match.group(1).strip() if title_match else body[:240]).strip(" ,.;。；")
+
+        if ref.bibtex_type == "article":
+            journal_match = re.search(r"\[\s*J\s*\][,，.\s]*(.+?)(?:[,，]\s*(?:19|20)\d{2}|$)", body, re.IGNORECASE)
+            if journal_match:
+                ref.journal = journal_match.group(1).strip()
+        elif ref.bibtex_type == "book":
+            publisher_match = re.search(r"(出版社|Press)", body, re.IGNORECASE)
+            if publisher_match:
+                ref.publisher = body[max(0, publisher_match.start() - 24): publisher_match.end() + 24].strip(" ,.;。；")
+
+        return ref
+
+    @staticmethod
+    def _normalize_inline_text(value: str) -> str:
+        return re.sub(r"\s+", "", str(value or "")).lower()
 
     @staticmethod
     def extract_citations(text: str, style: str = "numeric") -> List[Citation]:
@@ -375,7 +463,7 @@ class ReferenceValidator:
 
         # 检查 DOI 缺失
         for ref in refs:
-            if not ref.doi and ref.bibtex_type == "article":
+            if not ref.doi and ReferenceValidator.requires_doi(ref):
                 result.doi_missing.append(ref.ref_id or f"ref_{refs.index(ref)+1}")
 
         result.score = ReferenceValidator._compute_score(result)
@@ -394,6 +482,54 @@ class ReferenceValidator:
             doi_missing_ratio = len(result.doi_missing) / result.total_refs
             score -= doi_missing_ratio * 0.2
         return max(0.0, round(score, 2))
+
+    @staticmethod
+    def infer_reference_type(
+        raw_text: str,
+        title: str = "",
+        journal: str = "",
+        booktitle: str = "",
+        publisher: str = "",
+    ) -> str:
+        text = " ".join(str(item or "") for item in [raw_text, title, journal, booktitle, publisher])
+        upper = text.upper()
+        if re.search(r"(GB/T|ISO|IEC|标准|国家标准|\[S\])", upper, re.IGNORECASE):
+            return "standard"
+        if re.search(r"(学位论文|硕士学位论文|博士学位论文|\[D\])", text, re.IGNORECASE):
+            return "phdthesis"
+        if re.search(r"(\[M\]|出版社|PRESS\b|出版)", text, re.IGNORECASE):
+            return "book"
+        if re.search(r"(\[EB/OL\]|\[EB\]|\[OL\]|https?://|www\.)", text, re.IGNORECASE):
+            return "webpage"
+        if journal or re.search(r"(\[J\]|journal|学报|期刊)", text, re.IGNORECASE):
+            return "article"
+        if booktitle or re.search(r"(\[C\]|conference|proceedings|会议)", text, re.IGNORECASE):
+            return "inproceedings"
+        return "misc"
+
+    @staticmethod
+    def requires_doi(ref: Reference) -> bool:
+        ref_type = ref.bibtex_type or ReferenceValidator.infer_reference_type(
+            raw_text=ref.raw_text,
+            title=ref.title,
+            journal=ref.journal or "",
+            booktitle=ref.booktitle or "",
+            publisher=ref.publisher or "",
+        )
+        return ref_type in {"article", "inproceedings"}
+
+    @staticmethod
+    def requires_doi_metadata(ref: Dict[str, Any]) -> bool:
+        ref_type = str(ref.get("bibtex_type") or ref.get("reference_type") or "").strip().lower()
+        if not ref_type:
+            ref_type = ReferenceValidator.infer_reference_type(
+                raw_text=str(ref.get("raw_text") or ""),
+                title=str(ref.get("title") or ""),
+                journal=str(ref.get("journal") or ""),
+                booktitle=str(ref.get("booktitle") or ""),
+                publisher=str(ref.get("publisher") or ""),
+            )
+        return ref_type in {"article", "inproceedings"}
 
     @staticmethod
     def verify_doi(doi: str) -> Dict[str, Any]:
@@ -622,9 +758,7 @@ class ReferenceEngine:
             text = path.read_text(encoding="utf-8", errors="replace")
             citations = self.parser.extract_citations(text, "numeric")
         elif path.suffix.lower() == ".docx":
-            from docx import Document
-            doc = Document(str(path))
-            text = "\n".join(p.text for p in doc.paragraphs)
+            text = self.parser.extract_body_text(paper_path)
             citations = self.parser.extract_citations(text, "numeric")
         else:
             return ReferenceCheckResult()

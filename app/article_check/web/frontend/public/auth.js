@@ -2,9 +2,9 @@
   const searchParams = new URLSearchParams(window.location.search);
   const defaultConfig = {
     enabled: false,
-    mode: 'prod_api_idp',
+    mode: 'legacy_oauth',
     apiBase: '/prod-api',
-    host: '',
+    host: 'http://124.71.226.114:8444',
     callbackPath: '/auth/login',
     storagePrefix: 'article_check_platform_',
     debug: false,
@@ -370,7 +370,7 @@
 
     async function loadRuntimeConfig() {
       try {
-        const response = await fetch('/webdemo/paper-check-agent/api/platform-auth-config', { credentials: 'same-origin' });
+        const response = await fetch('/api/platform-auth-config', { credentials: 'same-origin' });
         if (!response.ok) {
           return window.__ARTICLE_CHECK_PLATFORM_AUTH__ || {};
         }

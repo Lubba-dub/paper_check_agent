@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from article_check.config.settings import config
 from article_check.parsers import GrobidClient
-from article_check.references.engine import ReferenceEngine, ReferenceParser
+from article_check.references.engine import ReferenceEngine, ReferenceParser, ReferenceValidator
 from article_check.utils.file_utils import detect_file_type, extract_text_from_docx, extract_text_from_pdf, read_paper_content
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,7 @@ def _serialize_reference(ref: Any, index: int) -> Dict[str, Any]:
         "arxiv_id": getattr(ref, "arxiv_id", None),
         "pmid": getattr(ref, "pmid", None),
         "url": ref.url,
+        "bibtex_type": getattr(ref, "bibtex_type", None),
         "source": ref.source,
         "raw_text": ref.raw_text,
     }
@@ -126,6 +127,7 @@ def _serialize_reference_stats(result: Any) -> Dict[str, Any]:
         "unmatched_citations": getattr(result, "unmatched_citations", []),
         "unused_refs": getattr(result, "unused_refs", []),
         "doi_missing": getattr(result, "doi_missing", []),
+        "parsed_entry_count": getattr(result, "total_refs", 0),
         "score": getattr(result, "score", 0.0),
     }
 
@@ -166,7 +168,7 @@ def _compute_reference_stats_from_records(references: List[Dict[str, Any]], cita
     doi_missing = [
         item.get("reference_id") or f"ref_{index}"
         for index, item in enumerate(references, start=1)
-        if not item.get("doi")
+        if not item.get("doi") and ReferenceValidator.requires_doi_metadata(item)
     ]
     total_refs = len(references)
     total_citations = len(citations)
@@ -184,8 +186,34 @@ def _compute_reference_stats_from_records(references: List[Dict[str, Any]], cita
         "unmatched_citations": unmatched,
         "unused_refs": unused,
         "doi_missing": doi_missing,
+        "parsed_entry_count": total_refs,
         "score": max(0.0, round(score, 3)),
     }
+
+
+def _extract_section_text_from_blocks(
+    blocks: List[Dict[str, Any]],
+    start_aliases: List[str],
+    stop_aliases: List[str],
+) -> str:
+    normalized_starts = {_normalize_text(item).rstrip(":：") for item in start_aliases}
+    normalized_stops = {_normalize_text(item).rstrip(":：") for item in stop_aliases}
+    in_section = False
+    collected: List[str] = []
+
+    for block in blocks:
+        text = str(block.get("text") or "").strip()
+        if not text:
+            continue
+        normalized = _normalize_text(text).rstrip(":：")
+        if normalized in normalized_starts:
+            in_section = True
+            continue
+        if in_section and normalized in normalized_stops:
+            break
+        if in_section:
+            collected.append(text)
+    return "\n".join(collected).strip()
 
 
 def _merge_grobid_pdf_parse(base: Dict[str, Any], grobid: Dict[str, Any]) -> Dict[str, Any]:
@@ -291,11 +319,25 @@ def _parse_docx_layout(path: Path) -> Dict[str, Any]:
     font_sizes: List[float] = []
     font_names: List[str] = []
     line_spacings: List[float] = []
+    para_map = {id(para._p): para for para in doc.paragraphs}
+    table_map = {id(table._tbl): table for table in doc.tables}
+    current_page = 1
+    paragraph_index = 0
 
-    for paragraph_index, para in enumerate(doc.paragraphs, start=1):
+    def _paragraph_has_page_break(para) -> bool:
+        if para.paragraph_format and para.paragraph_format.page_break_before:
+            return True
+        return bool(para._element.xpath('.//*[local-name()="br" and @*[local-name()="type"]="page"]'))
+
+    def _paragraph_has_section_break(para) -> bool:
+        return bool(para._element.xpath('./*[local-name()="pPr"]/*[local-name()="sectPr"]'))
+
+    def _append_paragraph_block(para, *, page_number: int) -> None:
+        nonlocal paragraph_index
         text = para.text.strip()
         if not text:
-            continue
+            return
+        paragraph_index += 1
 
         style_name = para.style.name if para.style else ""
         heading_level = _detect_heading_level(text)
@@ -333,7 +375,7 @@ def _parse_docx_layout(path: Path) -> Dict[str, Any]:
         block = {
             "block_id": f"p-{paragraph_index}",
             "type": block_type,
-            "page": None,
+            "page": page_number,
             "paragraph_index": paragraph_index,
             "heading_level": heading_level,
             "text": text,
@@ -353,7 +395,7 @@ def _parse_docx_layout(path: Path) -> Dict[str, Any]:
             {
                 "anchor_id": f"anchor-p-{paragraph_index}",
                 "block_id": block["block_id"],
-                "page": None,
+                "page": page_number,
                 "paragraph_index": paragraph_index,
                 "bbox": None,
                 "text_excerpt": text[:200],
@@ -366,37 +408,86 @@ def _parse_docx_layout(path: Path) -> Dict[str, Any]:
                     "caption_id": f"caption-{len(captions) + 1}",
                     "block_id": block["block_id"],
                     "label": text[:80],
-                    "page": None,
+                    "page": page_number,
                     "bbox": None,
                 }
             )
             if re.match(r"^(图|Figure)", text, re.IGNORECASE):
-                figures.append({"figure_id": f"fig-{len(figures) + 1}", "caption_id": captions[-1]["caption_id"]})
+                figures.append({"figure_id": f"fig-{len(figures) + 1}", "caption_id": captions[-1]["caption_id"], "page": page_number})
             if re.match(r"^(表|Table)", text, re.IGNORECASE):
-                tables.append({"table_id": f"tbl-{len(tables) + 1}", "caption_id": captions[-1]["caption_id"]})
+                tables.append({"table_id": f"tbl-{len(tables) + 1}", "caption_id": captions[-1]["caption_id"], "page": page_number})
 
-    for index, table in enumerate(doc.tables, start=1):
+    def _append_table_block(table, *, page_number: int, table_index: int) -> None:
+        nonlocal paragraph_index
+        row_texts = []
+        for row in table.rows:
+            cells = [" ".join(p.text.strip() for p in cell.paragraphs if p.text and p.text.strip()) for cell in row.cells]
+            text = " | ".join(item.strip() for item in cells if item and item.strip()).strip()
+            if text:
+                row_texts.append(text)
+        table_text = "\n".join(row_texts).strip()
+        if not table_text:
+            return
+        paragraph_index += 1
+        block = {
+            "block_id": f"tbl-{table_index}",
+            "type": "table",
+            "page": page_number,
+            "paragraph_index": paragraph_index,
+            "heading_level": None,
+            "text": table_text,
+            "bbox": None,
+            "style": {"rows": len(table.rows), "columns": len(table.columns)},
+        }
+        blocks.append(block)
+        anchors.append(
+            {
+                "anchor_id": f"anchor-tbl-{table_index}",
+                "block_id": block["block_id"],
+                "page": page_number,
+                "paragraph_index": paragraph_index,
+                "bbox": None,
+                "text_excerpt": table_text[:200],
+            }
+        )
         tables.append(
             {
-                "table_id": f"tbl-grid-{index}",
+                "table_id": f"tbl-grid-{table_index}",
                 "rows": len(table.rows),
                 "columns": len(table.columns),
                 "caption_id": None,
+                "page": page_number,
             }
         )
 
+    table_index = 0
+    for child in doc.element.body.iterchildren():
+        tag = child.tag.split("}")[-1]
+        if tag == "p" and id(child) in para_map:
+            para = para_map[id(child)]
+            if para.paragraph_format and para.paragraph_format.page_break_before and blocks:
+                current_page += 1
+            _append_paragraph_block(para, page_number=current_page)
+            if _paragraph_has_page_break(para) or _paragraph_has_section_break(para):
+                current_page += 1
+        elif tag == "tbl" and id(child) in table_map:
+            table_index += 1
+            _append_table_block(table_map[id(child)], page_number=current_page, table_index=table_index)
+
+    page_total = max([block.get("page") or 1 for block in blocks] + [1])
+    template_section = doc.sections[0] if doc.sections else None
     pages = []
-    for page_index, section in enumerate(doc.sections, start=1):
+    for page_index in range(1, page_total + 1):
         pages.append(
             {
                 "page_number": page_index,
-                "width_pt": round(float(section.page_width.pt), 2) if section.page_width else None,
-                "height_pt": round(float(section.page_height.pt), 2) if section.page_height else None,
+                "width_pt": round(float(template_section.page_width.pt), 2) if template_section and template_section.page_width else None,
+                "height_pt": round(float(template_section.page_height.pt), 2) if template_section and template_section.page_height else None,
                 "margins_cm": {
-                    "top": round(float(section.top_margin.cm), 3) if section.top_margin else None,
-                    "bottom": round(float(section.bottom_margin.cm), 3) if section.bottom_margin else None,
-                    "left": round(float(section.left_margin.cm), 3) if section.left_margin else None,
-                    "right": round(float(section.right_margin.cm), 3) if section.right_margin else None,
+                    "top": round(float(template_section.top_margin.cm), 3) if template_section and template_section.top_margin else None,
+                    "bottom": round(float(template_section.bottom_margin.cm), 3) if template_section and template_section.bottom_margin else None,
+                    "left": round(float(template_section.left_margin.cm), 3) if template_section and template_section.left_margin else None,
+                    "right": round(float(template_section.right_margin.cm), 3) if template_section and template_section.right_margin else None,
                 },
             }
         )
@@ -409,6 +500,11 @@ def _parse_docx_layout(path: Path) -> Dict[str, Any]:
         "figures": figures,
         "tables": tables,
         "captions": captions,
+        "abstract": _extract_section_text_from_blocks(
+            blocks,
+            ["摘要", "摘 要", "abstract"],
+            ["关键词", "key words", "keywords", "英文摘要", "外文摘要", "abstract", "目录", "引言", "绪论"],
+        ),
         "format_metrics": {
             "font_name_summary": Counter(font_names).most_common(5),
             "font_size_summary_pt": Counter(font_sizes).most_common(5),
@@ -456,6 +552,11 @@ def _parse_pdf_layout(path: Path) -> Dict[str, Any]:
             "figures": [],
             "tables": [],
             "captions": [],
+            "abstract": _extract_section_text_from_blocks(
+                blocks,
+                ["摘要", "摘 要", "abstract"],
+                ["关键词", "key words", "keywords", "英文摘要", "外文摘要", "目录", "引言", "绪论"],
+            ),
             "format_metrics": {},
         }
 
@@ -585,6 +686,11 @@ def _parse_pdf_layout(path: Path) -> Dict[str, Any]:
         "figures": figures,
         "tables": tables,
         "captions": captions,
+        "abstract": _extract_section_text_from_blocks(
+            blocks,
+            ["摘要", "摘 要", "abstract"],
+            ["关键词", "key words", "keywords", "英文摘要", "外文摘要", "目录", "引言", "绪论"],
+        ),
         "format_metrics": {
             "page_margin_summary_pt": pages[0]["margins_pt"] if pages else {},
         },
@@ -641,6 +747,11 @@ def _parse_text_layout(path: Path, file_type: str) -> Dict[str, Any]:
         "figures": figures,
         "tables": tables,
         "captions": captions,
+        "abstract": _extract_section_text_from_blocks(
+            blocks,
+            ["摘要", "摘 要", "abstract"],
+            ["关键词", "key words", "keywords", "英文摘要", "外文摘要", "目录", "引言", "绪论"],
+        ),
         "format_metrics": {},
     }
 
@@ -693,7 +804,8 @@ def build_evidence_bundle(
             stats = engine.validate(str(path), refs=refs)
         except Exception as exc:
             logger.warning("验证参考文献失败: %s", exc)
-        citations = _extract_citation_contexts(text)
+        citation_text = ReferenceParser.extract_body_text(str(path)) if file_type == "docx" else text
+        citations = _extract_citation_contexts(citation_text)
         references = [_serialize_reference(ref, index) for index, ref in enumerate(refs, start=1)]
 
     layout_ast = {

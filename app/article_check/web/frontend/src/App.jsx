@@ -15,8 +15,8 @@ import ReviewPage from './pages/ReviewPage';
 import { api } from './api/client';
 
 const NAV = [
-  { path: '/', label: '控制台', icon: BarChart3 },
-  { path: '/review', label: '论文审查', icon: FileText },
+  { path: '/', label: '首页', icon: BarChart3 },
+  { path: '/review', label: '开始检查', icon: FileText },
 ];
 
 export default function App() {
@@ -41,7 +41,7 @@ export default function App() {
             </div>
             <div>
               <div className="text-sm font-semibold tracking-[0.24em] text-white/90">ARTICLE CHECK</div>
-              <div className="text-xs text-slate-400">论文审查与修改辅助</div>
+              <div className="text-xs text-slate-400">论文修改与送审准备</div>
             </div>
           </Link>
           <button onClick={() => setSidebar(false)} className="text-slate-400 lg:hidden">
@@ -51,17 +51,17 @@ export default function App() {
 
         <div className="px-4 py-5">
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-            <div className="text-xs uppercase tracking-[0.24em] text-slate-400">当前状态</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-slate-400">当前服务</div>
             <div className="mt-3 flex items-center gap-2 text-sm text-white">
               <span className={`h-2.5 w-2.5 rounded-full ${status ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-              {status ? `API ${status.version}` : 'API 离线'}
+              {status ? '检查服务可用' : '暂未连接检查服务'}
             </div>
             <div className="mt-2 text-xs text-slate-400">
-              {status?.templates ? `${status.templates} 个模板 · ${status.dify_enabled ? 'Dify 已接入' : 'Dify 待配置'}` : '等待状态同步'}
+              {status?.templates ? `${status.templates} 套检查规则 · ${status.dify_enabled ? '智能检查已就绪' : '智能检查待配置'}` : '正在读取当前服务信息'}
             </div>
-            {status?.ai_provider && (
+            {status?.version && (
               <div className="mt-2 text-xs text-slate-500">
-                审查引擎: {String(status.ai_provider).toUpperCase()}
+                服务版本: {status.version}
               </div>
             )}
           </div>
@@ -84,12 +84,12 @@ export default function App() {
           <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-primary-500/20 to-sky-500/10 px-4 py-4">
             <div className="flex items-center gap-2 text-sm font-medium text-white">
               <ShieldCheck className="h-4 w-4 text-primary-300" />
-              重点查看内容
+              这次先看什么
             </div>
             <div className="mt-3 space-y-2 text-xs text-slate-300">
-              <div className="flex items-center gap-2"><Activity className="h-3.5 w-3.5" /> 哪些问题最影响提交</div>
-              <div className="flex items-center gap-2"><Activity className="h-3.5 w-3.5" /> 每个问题对应哪段原文</div>
-              <div className="flex items-center gap-2"><Activity className="h-3.5 w-3.5" /> 接下来应该先改什么</div>
+              <div className="flex items-center gap-2"><Activity className="h-3.5 w-3.5" /> 哪些地方最容易被导师指出</div>
+              <div className="flex items-center gap-2"><Activity className="h-3.5 w-3.5" /> 哪些引用和格式需要先补齐</div>
+              <div className="flex items-center gap-2"><Activity className="h-3.5 w-3.5" /> 修改顺序该怎么排</div>
             </div>
           </div>
         </div>
@@ -105,19 +105,19 @@ export default function App() {
                 <Menu className="h-5 w-5" />
               </button>
               <div>
-                <div className="text-xs uppercase tracking-[0.28em] text-slate-500">Paper Review Assistant</div>
-                <div className="mt-1 text-lg font-semibold text-slate-900">论文审查与修改辅助</div>
+                <div className="text-xs uppercase tracking-[0.28em] text-slate-500">Before Submission</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900">论文修改与送审准备</div>
               </div>
             </div>
 
             <div className="hidden items-center gap-3 lg:flex">
               <span className="capsule capsule-muted">
                 <Activity className="h-3.5 w-3.5" />
-                {status?.dify_enabled ? 'Dify 已接入' : 'Dify 待配置'}
+                {status?.dify_enabled ? '智能检查已就绪' : '智能检查待配置'}
               </span>
               <span className="capsule capsule-muted">
                 <BarChart3 className="h-3.5 w-3.5" />
-                在线交付版
+                当前为交付环境
               </span>
               <a
                 href="https://github.com/Lubba-dub/ArticleCheck"

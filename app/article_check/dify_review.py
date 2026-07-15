@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -33,6 +34,7 @@ UNDERGRAD_RULE_PATH = RULE_DIR / "bnu_undergraduate_template_rule_profile.json"
 GRAD_RULE_PATH = RULE_DIR / "bnu_graduate_requirement_rule_profile.json"
 
 DOCUMENT_READ_DSL = "articlecheck_document_read_workflow.yml"
+COMPONENT_CLASSIFICATION_DSL = "articlecheck_component_classification_workflow.yml"
 FORMAT_REVIEW_DSL = "articlecheck_format_review_workflow.yml"
 REFERENCE_REVIEW_DSL = "articlecheck_reference_verify_workflow.yml"
 HALLUCINATION_REVIEW_DSL = "articlecheck_hallucination_review_workflow.yml"
@@ -47,6 +49,7 @@ PRIMARY_DIFY_DSLS = {
 }
 ENV_BINDING_MAP = {
     DOCUMENT_READ_DSL: "DOCUMENT_READ",
+    COMPONENT_CLASSIFICATION_DSL: "COMPONENT_CLASSIFICATION",
     FORMAT_REVIEW_DSL: "FORMAT_REVIEW",
     REFERENCE_REVIEW_DSL: "REFERENCE_VERIFY",
     HALLUCINATION_REVIEW_DSL: "HALLUCINATION_REVIEW",
@@ -226,7 +229,7 @@ def _detect_heading_level(line: str) -> Optional[int]:
     normalized = _normalize_heading(candidate).lower()
     if normalized in {
         "摘要", "abstract", "关键词", "目录", "引言", "前言", "绪论", "正文",
-        "结论", "结语", "参考文献", "致谢", "附录", "references",
+        "结论", "结语", "参考文献", "致谢", "附录", "references", "bibliography",
     }:
         return 1
     if re.match(r"^第[一二三四五六七八九十\d]+章", candidate):
@@ -578,6 +581,148 @@ def _build_fallback_document_read_output(
     }
 
 
+def _build_font_profile_from_evidence_bundle(bundle: Dict[str, Any]) -> Dict[str, Any]:
+    blocks = [item for item in ((bundle.get("layout") or {}).get("blocks") or []) if isinstance(item, dict)]
+    components: Dict[str, Dict[str, List[Any]]] = {}
+
+    def _bucket(name: str) -> Dict[str, List[Any]]:
+        return components.setdefault(name, {
+            "font_names": [],
+            "font_sizes_pt": [],
+            "alignments": [],
+            "samples": [],
+            "pages": [],
+        })
+
+    for block in blocks:
+        text = str(block.get("text") or "").strip()
+        if not text:
+            continue
+        style = block.get("style") or {}
+        normalized = _normalize_heading(text).lower()
+        if (block.get("page") or 1) == 1 and any(token in normalized for token in ["论文", "学位", "姓名", "作者", "导师", "学院", "专业"]):
+            component = "cover"
+        elif any(token in normalized for token in ["诚信承诺书", "论文使用授权说明", "原创性声明", "版权声明"]):
+            component = "statement"
+        elif block.get("type") == "caption":
+            component = "caption"
+        elif block.get("type") == "heading":
+            component = "heading"
+        else:
+            component = "body"
+
+        bucket = _bucket(component)
+        bucket["samples"].append(text[:80])
+        bucket["pages"].append(block.get("page"))
+        if style.get("font_name"):
+            bucket["font_names"].append(style.get("font_name"))
+        if style.get("font_size_pt") not in (None, ""):
+            bucket["font_sizes_pt"].append(style.get("font_size_pt"))
+        if style.get("alignment") not in (None, ""):
+            bucket["alignments"].append(style.get("alignment"))
+
+    return {
+        "file_type": bundle.get("file_type"),
+        "components": {
+            name: {
+                "pages": sorted({item for item in payload["pages"] if item not in (None, "")}),
+                "sample_texts": payload["samples"][:5],
+                "font_name_summary": [{ "value": key, "count": count } for key, count in Counter(payload["font_names"]).most_common(5)],
+                "font_size_summary_pt": [{ "value": key, "count": count } for key, count in Counter(payload["font_sizes_pt"]).most_common(5)],
+                "alignment_summary": [{ "value": key, "count": count } for key, count in Counter(payload["alignments"]).most_common(5)],
+            }
+            for name, payload in components.items()
+        },
+    }
+
+
+def _build_fallback_component_classification_output(
+    evidence_bundle: Dict[str, Any],
+    *,
+    review_track: str,
+) -> Dict[str, Any]:
+    structure = [item for item in (evidence_bundle.get("document_structure") or []) if isinstance(item, dict)]
+    anchors = [item for item in (evidence_bundle.get("source_snippet_anchors") or []) if isinstance(item, dict)]
+    blocks = [item for item in ((evidence_bundle.get("layout") or {}).get("blocks") or []) if isinstance(item, dict)]
+
+    page_roles: Dict[str, str] = {}
+    manual_check_flags: List[Dict[str, Any]] = []
+    component_map: List[Dict[str, Any]] = []
+
+    first_page_text = "\n".join(
+        str(block.get("text") or "").strip()
+        for block in blocks
+        if (block.get("page") or 1) == 1 and str(block.get("text") or "").strip()
+    )
+    first_page_norm = _normalize_heading(first_page_text).lower()
+    if any(token in first_page_norm for token in ["诚信承诺书", "论文使用授权说明", "原创性声明"]):
+        page_roles["1"] = "statement"
+        manual_check_flags.append({"component": "cover", "reason": "第一页命中声明页关键词，封面识别需人工确认。"})
+    elif any(token in first_page_norm for token in ["论文", "姓名", "导师", "学院", "专业", "学号"]):
+        page_roles["1"] = "cover"
+        component_map.append({
+            "component": "cover",
+            "confidence": 0.78,
+            "page_start": 1,
+            "page_end": 1,
+            "anchor_id": anchors[0].get("anchor_id") if anchors else None,
+        })
+    else:
+        manual_check_flags.append({"component": "cover", "reason": "第一页缺少稳定封面字段组合。"})
+
+    for node in structure:
+        heading = str(node.get("heading") or "")
+        normalized = _normalize_heading(heading).lower()
+        page_start = node.get("page_start")
+        page_end = node.get("page_end") or page_start
+        component = None
+        if normalized in {"摘要", "abstract", "摘 要"}:
+            component = "abstract_zh" if "摘" in heading or heading == "摘要" else "abstract_en"
+        elif normalized in {"关键词", "keywords", "key words"}:
+            component = "keywords_zh" if "关键" in heading else "keywords_en"
+        elif normalized in {"目录"}:
+            component = "toc"
+        elif normalized in {"参考文献", "references", "bibliography"}:
+            component = "references"
+        elif normalized in {"引言", "前言", "绪论", "正文", "结论", "结语"}:
+            component = "body"
+        if component:
+            component_map.append({
+                "component": component,
+                "confidence": 0.92 if component != "body" else 0.8,
+                "page_start": page_start,
+                "page_end": page_end,
+                "heading": heading,
+            })
+            if page_start:
+                for page in range(int(page_start), int(page_end or page_start) + 1):
+                    page_roles[str(page)] = component
+
+    if not any(item.get("component") == "references" for item in component_map):
+        manual_check_flags.append({"component": "references", "reason": "未稳定识别到 references/bibliography 标题，需人工确认参考文献边界。"})
+
+    return {
+        "component_map": component_map,
+        "page_roles": page_roles,
+        "confidence_summary": {
+            "review_track": review_track,
+            "recognized_component_count": len(component_map),
+        },
+        "review_hints": {
+            "component_font_signals": _build_font_profile_from_evidence_bundle(evidence_bundle).get("components", {}),
+        },
+        "manual_check_flags": manual_check_flags,
+    }
+
+
+def _workflow_binding_available(binding_name: str) -> bool:
+    try:
+        binding = load_dify_workflow_bindings().get(binding_name)
+    except Exception:
+        return False
+    return bool(binding and binding.api_key and binding.base_url)
+
+
 def _loose_json_loads(value: Any) -> Any:
     if isinstance(value, (dict, list)):
         return value
@@ -669,6 +814,42 @@ def _normalize_location_value(location: Any, *sources: Any) -> Dict[str, Any]:
     if not normalized.get("line") and normalized.get("paragraph_index"):
         normalized["line"] = normalized["paragraph_index"]
     return {key: value for key, value in normalized.items() if value not in (None, "", [], {})}
+
+
+def _severity_rank(severity: Any) -> int:
+    order = {
+        "critical": 0,
+        "major": 1,
+        "minor": 2,
+        "info": 3,
+    }
+    return order.get(str(severity or "info").strip().lower(), 4)
+
+
+def _sort_items_by_severity(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(
+        items or [],
+        key=lambda item: (
+            _severity_rank(item.get("severity")),
+            str(item.get("category") or item.get("stage") or ""),
+            str(item.get("type") or ""),
+            str(item.get("description") or item.get("claim") or ""),
+        ),
+    )
+
+
+def _priority_rank(value: Any) -> int:
+    return _severity_rank(value)
+
+
+def _sort_priority_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return sorted(
+        blocks or [],
+        key=lambda item: (
+            _priority_rank(item.get("priority")),
+            str(item.get("title") or ""),
+        ),
+    )
 
 
 def _build_anchor_lookup(evidence_bundle: Dict[str, Any], evidence_index: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -826,6 +1007,11 @@ def _ensure_issue_ids(items: List[Dict[str, Any]], prefix: str, category: str) -
     for index, item in enumerate(items or [], start=1):
         if not isinstance(item, dict):
             continue
+        location = _normalize_location_value(
+            item.get("location"),
+            item.get("evidence_span"),
+            item,
+        )
         normalized.append(
             {
                 "issue_id": item.get("issue_id") or f"{prefix}-{index}",
@@ -833,12 +1019,12 @@ def _ensure_issue_ids(items: List[Dict[str, Any]], prefix: str, category: str) -
                 "severity": item.get("severity") or "minor",
                 "description": item.get("description") or item.get("summary") or "",
                 "suggestion": item.get("suggestion") or "",
-                "location": item.get("location") or {},
+                "location": location,
                 "evidence_span": item.get("evidence_span") or {},
                 **{k: v for k, v in item.items() if k not in {"issue_id", "type", "severity", "description", "suggestion", "location"}},
             }
         )
-    return normalized
+    return _sort_items_by_severity(normalized)
 
 
 def _reference_items_to_issues(reference_review: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -855,12 +1041,16 @@ def _reference_items_to_issues(reference_review: Dict[str, Any]) -> List[Dict[st
                     "severity": item.get("severity") or "major",
                     "description": item.get("description") or item.get("title") or "参考文献风险",
                     "suggestion": item.get("suggestion") or "复核该参考文献的来源、作者、年份与 DOI 信息",
-                    "location": item.get("location") or {"section": "references"},
+                    "location": _normalize_location_value(
+                        item.get("location"),
+                        item.get("evidence_span"),
+                        item,
+                    ) or {"section": "references"},
                     "confidence": item.get("confidence", 0.95),
                     "evidence_span": item.get("evidence_span") or {},
                 }
             )
-        return issues
+        return _sort_items_by_severity(issues)
     for index, item in enumerate(reference_review.get("suspicious_references", []) or [], start=1):
         if isinstance(item, str):
             issues.append(
@@ -882,7 +1072,11 @@ def _reference_items_to_issues(reference_review: Dict[str, Any]) -> List[Dict[st
                     "severity": item.get("severity") or "major",
                     "description": item.get("description") or item.get("title") or "参考文献风险",
                     "suggestion": item.get("suggestion") or "复核该参考文献的来源、作者、年份与 DOI 信息",
-                    "location": item.get("location") or {"section": "references"},
+                    "location": _normalize_location_value(
+                        item.get("location"),
+                        item.get("evidence_span"),
+                        item,
+                    ) or {"section": "references"},
                     "evidence_span": item.get("evidence_span") or {},
                 }
             )
@@ -895,11 +1089,15 @@ def _reference_items_to_issues(reference_review: Dict[str, Any]) -> List[Dict[st
                 "severity": "minor",
                 "description": desc,
                 "suggestion": "人工复核该引文与参考文献是否一致",
-                "location": {"section": "references"},
+                "location": _normalize_location_value(
+                    item.get("location") if isinstance(item, dict) else None,
+                    item.get("evidence_span") if isinstance(item, dict) else None,
+                    item if isinstance(item, dict) else None,
+                ) or {"section": "references"},
                 "evidence_span": item.get("evidence_span") if isinstance(item, dict) else {},
             }
         )
-    return issues
+    return _sort_items_by_severity(issues)
 
 
 def _normalize_findings(
@@ -921,12 +1119,16 @@ def _normalize_findings(
                     "type": item.get("type") or f"finding_{index}",
                     "description": item.get("description") or item.get("title") or "",
                     "suggestion": item.get("suggestion") or "",
-                    "location": item.get("location") or {},
+                    "location": _normalize_location_value(
+                        item.get("location"),
+                        item.get("evidence_span"),
+                        item,
+                    ),
                     "evidence_span": item.get("evidence_span") or {},
                 }
             )
         if normalized:
-            return normalized
+            return _sort_items_by_severity(normalized)
 
     merged: List[Dict[str, Any]] = []
     for item in _ensure_issue_ids(format_review.get("issues", []), "format", "format"):
@@ -937,7 +1139,11 @@ def _normalize_findings(
                 "type": item.get("type", "format"),
                 "description": item.get("description", ""),
                 "suggestion": item.get("suggestion", ""),
-                "location": item.get("location") or {},
+                "location": _normalize_location_value(
+                    item.get("location"),
+                    item.get("evidence_span"),
+                    item,
+                ),
                 "evidence_span": item.get("evidence_span") or {},
             }
         )
@@ -949,7 +1155,11 @@ def _normalize_findings(
                 "type": item.get("type", "reference"),
                 "description": item.get("description", ""),
                 "suggestion": item.get("suggestion", ""),
-                "location": item.get("location") or {},
+                "location": _normalize_location_value(
+                    item.get("location"),
+                    item.get("evidence_span"),
+                    item,
+                ),
                 "evidence_span": item.get("evidence_span") or {},
             }
         )
@@ -961,11 +1171,15 @@ def _normalize_findings(
                 "type": item.get("type", "hallucination"),
                 "description": item.get("description", ""),
                 "suggestion": item.get("suggestion", ""),
-                "location": item.get("location") or {},
+                "location": _normalize_location_value(
+                    item.get("location"),
+                    item.get("evidence_span"),
+                    item,
+                ),
                 "evidence_span": item.get("evidence_span") or {},
             }
         )
-    return merged
+    return _sort_items_by_severity(merged)
 
 
 def _normalize_evidence_records(
@@ -991,7 +1205,11 @@ def _normalize_evidence_records(
                 "claim": item.get("claim") or item.get("description") or item.get("summary") or "",
                 "confidence": item.get("confidence", 0.8),
                 "severity": item.get("severity", "info"),
-                "location": item.get("location") or {},
+                "location": _normalize_location_value(
+                    item.get("location"),
+                    item.get("evidence_span"),
+                    item,
+                ),
                 "evidence_span": item.get("evidence_span") or {},
                 "quoted_text": item.get("quoted_text") or item.get("quote") or "",
                 "suggestion": item.get("suggestion") or "",
@@ -1004,7 +1222,7 @@ def _normalize_evidence_records(
                 record["evidence_id"] = record["evidence_span"]["anchor_id"]
             normalized.append(record)
         if normalized:
-            return normalized
+            return _sort_items_by_severity(normalized)
 
     normalized = []
     for stage, payload, field in (
@@ -1023,7 +1241,11 @@ def _normalize_evidence_records(
                 "claim": item.get("description") or item.get("summary") or "",
                 "confidence": item.get("confidence", 0.8),
                 "severity": item.get("severity", "info"),
-                "location": item.get("location") or {},
+                "location": _normalize_location_value(
+                    item.get("location"),
+                    item.get("evidence_span"),
+                    item,
+                ),
                 "evidence_span": item.get("evidence_span") or {},
                 "quoted_text": item.get("quoted_text") or item.get("quote") or "",
                 "suggestion": item.get("suggestion") or "",
@@ -1035,7 +1257,7 @@ def _normalize_evidence_records(
             if record.get("evidence_span", {}).get("anchor_id"):
                 record["evidence_id"] = record["evidence_span"]["anchor_id"]
             normalized.append(record)
-    return normalized
+    return _sort_items_by_severity(normalized)
 
 
 def _link_issues_with_evidence(
@@ -1098,7 +1320,7 @@ def _priority_blocks(report_delta: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "actions": action_items or [action.get("description") or ""],
                 }
             )
-    return [item for item in blocks if item.get("actions")]
+    return _sort_priority_blocks([item for item in blocks if item.get("actions")])
 
 
 def _build_workflow_trace(duration: float) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
@@ -1107,6 +1329,7 @@ def _build_workflow_trace(duration: float) -> Tuple[Dict[str, Dict[str, Any]], L
         ("audit", "deterministic_audit"),
         ("verify", "verification"),
         ("document_read", "document_read"),
+        ("components", "component_classification"),
         ("format", "format_check"),
         ("content", "hallucination_review"),
         ("report", "report"),
@@ -1167,6 +1390,7 @@ def run_dify_review_chain(
 
     section_digest = build_section_digest(evidence_bundle)
     evidence_index = build_evidence_index(evidence_bundle)
+    font_profile = _build_font_profile_from_evidence_bundle(evidence_bundle)
     risk_hints = [
         item.get("description")
         for item in (deterministic_audit.get("issues") or [])[:6]
@@ -1205,6 +1429,31 @@ def run_dify_review_chain(
             review_focus=resolved_review_focus,
             template_name=resolved_template_name,
         )
+
+    component_output = _build_fallback_component_classification_output(
+        evidence_bundle,
+        review_track=track,
+    )
+    if _workflow_binding_available(COMPONENT_CLASSIFICATION_DSL):
+        try:
+            component_raw = _run_workflow(
+                COMPONENT_CLASSIFICATION_DSL,
+                {
+                    "paper_profile_json": _json_text(doc_output.get("paper_profile") or {}),
+                    "review_context_json": _json_text(doc_output.get("review_context") or {}),
+                    "evidence_index_json": _json_text(evidence_index),
+                    "template_rule_profile_json": _json_text(injected_rules["template_bundle"]),
+                    "requirement_rule_profile_json": _json_text(injected_rules["requirement_bundle"]),
+                    "font_profile_json": _json_text(font_profile),
+                    "file_type": evidence_bundle.get("file_type") or detect_file_type(path),
+                    "review_track": track,
+                },
+            )
+            component_candidate = _loose_json_loads(_extract_output(component_raw, ["component_map_json"]))
+            if isinstance(component_candidate, dict) and component_candidate.get("component_map") is not None:
+                component_output = component_candidate
+        except Exception:
+            logger.exception("component_classification 工作流执行失败，回退本地部件识别。")
 
     paper_profile = {
         **(doc_output.get("paper_profile") or {}),
@@ -1256,6 +1505,8 @@ def run_dify_review_chain(
             "review_context_json": _json_text(review_context),
             "format_policy_json": _json_text(injected_rules["format_policy"]),
             "section_digest_json": _json_text(section_digest),
+            "component_map_json": _json_text(component_output),
+            "font_profile_json": _json_text(font_profile),
             "evidence_index_json": _json_text(evidence_index),
             "risk_hints_json": _json_text(risk_hints),
             "detailed_mode": detailed_flag,
@@ -1348,10 +1599,16 @@ def run_dify_review_chain(
     )
     for item in evidence_records:
         item["paper_id"] = path.stem
-    format_review["issues"] = _link_issues_with_evidence(format_review.get("issues", []), evidence_records)
-    reference_section["issues"] = _link_issues_with_evidence(reference_section.get("issues", []), evidence_records)
-    hallucination_review["issues"] = _link_issues_with_evidence(hallucination_review.get("issues", []), evidence_records)
-    findings = _link_issues_with_evidence(findings, evidence_records)
+    format_review["issues"] = _sort_items_by_severity(
+        _link_issues_with_evidence(format_review.get("issues", []), evidence_records)
+    )
+    reference_section["issues"] = _sort_items_by_severity(
+        _link_issues_with_evidence(reference_section.get("issues", []), evidence_records)
+    )
+    hallucination_review["issues"] = _sort_items_by_severity(
+        _link_issues_with_evidence(hallucination_review.get("issues", []), evidence_records)
+    )
+    findings = _sort_items_by_severity(_link_issues_with_evidence(findings, evidence_records))
 
     overall_score = _extract_score(
         report_delta,
@@ -1382,6 +1639,7 @@ def run_dify_review_chain(
             "overall_score": overall_score,
             "duration": round(time.time() - start_time, 3),
             "errors": [],
+            "source_file_name": path.name,
         },
     )
 
@@ -1397,7 +1655,7 @@ def run_dify_review_chain(
             "institution": "北京师范大学",
             "review_track": track,
             "routing_reasons": reasons,
-            "architecture_version": "four_layer_v1",
+            "architecture_version": "four_layer_component_first_v2",
             "dify_primary_workflow_count": len(PRIMARY_DIFY_DSLS),
         },
         "summary": {
@@ -1415,6 +1673,7 @@ def run_dify_review_chain(
             "deterministic_audit": deterministic_audit,
             "verification_layer": verification_layer,
             "document_read": doc_output,
+            "component_classification": component_output,
             "format_check": format_review,
             "reference_check": reference_section,
             "content_review": {"hallucination_review": hallucination_review},
@@ -1442,6 +1701,75 @@ def run_dify_review_chain(
         "qa_seed_questions": report_delta.get("qa_seed_questions") or [],
     }
     return payload
+
+
+def run_dify_component_classification(
+    paper_path: str | Path,
+    *,
+    template_name: Optional[str] = None,
+    review_track: Optional[str] = None,
+    review_focus: Optional[str] = None,
+) -> Dict[str, Any]:
+    path = Path(paper_path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"论文文件不存在: {path}")
+
+    evidence_bundle = build_evidence_bundle(
+        path,
+        template_name=template_name,
+        review_track=review_track,
+    )
+    track = evidence_bundle.get("review_track", "graduate")
+    reasons = evidence_bundle.get("routing_reasons", [])
+    paper_bundle = _project_paper_bundle_from_evidence_bundle(evidence_bundle)
+    injected_rules = _build_rule_injection(track, reasons)
+    doc_output = _build_fallback_document_read_output(
+        paper_bundle,
+        injected_rules,
+        review_focus=review_focus or _default_review_focus(track),
+        template_name=template_name or injected_rules["active_rule_profile"].get("template_name") or path.stem,
+    )
+    evidence_index = build_evidence_index(evidence_bundle)
+    font_profile = _build_font_profile_from_evidence_bundle(evidence_bundle)
+    component_output = _build_fallback_component_classification_output(
+        evidence_bundle,
+        review_track=track,
+    )
+    if _workflow_binding_available(COMPONENT_CLASSIFICATION_DSL):
+        component_raw = _run_workflow(
+            COMPONENT_CLASSIFICATION_DSL,
+            {
+                "paper_profile_json": _json_text(doc_output.get("paper_profile") or {}),
+                "review_context_json": _json_text(doc_output.get("review_context") or {}),
+                "evidence_index_json": _json_text(evidence_index),
+                "template_rule_profile_json": _json_text(injected_rules["template_bundle"]),
+                "requirement_rule_profile_json": _json_text(injected_rules["requirement_bundle"]),
+                "font_profile_json": _json_text(font_profile),
+                "file_type": evidence_bundle.get("file_type") or detect_file_type(path),
+                "review_track": track,
+            },
+        )
+        component_candidate = _loose_json_loads(_extract_output(component_raw, ["component_map_json"]))
+        if isinstance(component_candidate, dict) and component_candidate.get("component_map") is not None:
+            component_output = component_candidate
+
+    return {
+        "meta": {
+            "paper_title": paper_bundle.get("title") or path.stem,
+            "source_paper_path": str(path),
+            "source_file_name": path.name,
+            "review_track": track,
+            "architecture_version": "four_layer_component_first_v2",
+        },
+        "sections": {
+            "parse_layer": evidence_bundle,
+            "document_read": doc_output,
+            "component_classification": component_output,
+            "font_profile": font_profile,
+        },
+        "component_classification": component_output,
+        "font_profile": font_profile,
+    }
 
 
 def infer_question_scope(question: str) -> str:

@@ -39,6 +39,7 @@ from article_check.utils.file_utils import detect_file_type
 from article_check.dify_review import (
     dify_workflows_available,
     get_dify_registry_status,
+    run_dify_component_classification,
     run_dify_report_qa,
     run_dify_review_chain,
 )
@@ -205,7 +206,7 @@ def _platform_auth_timeout_seconds() -> float:
 
 
 def _platform_auth_mode() -> str:
-    return os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_MODE", "").strip() or "prod_api_idp"
+    return os.getenv("ARTICLE_CHECK_PLATFORM_AUTH_MODE", "").strip() or "legacy_oauth"
 
 
 def _normalize_path_prefix(value: str, *, trailing_slash: bool = False) -> str:
@@ -529,6 +530,8 @@ def _snippet_from_lines(lines: List[str], center_line: int, radius: int) -> Dict
 def _snippet_from_section(lines: List[str], section_name: str, radius: int) -> Dict[str, Any]:
     section_lower = section_name.lower().strip()
     section_tokens = [section_lower.replace("_", " "), section_lower.replace("-", " ")]
+    if section_lower in {"references", "reference", "bibliography", "参考文献"}:
+        section_tokens.extend(["references", "reference", "bibliography", "参考文献"])
     for idx, line in enumerate(lines):
         line_lower = line.lower().strip()
         if any(token and token in line_lower for token in section_tokens):
@@ -536,7 +539,13 @@ def _snippet_from_section(lines: List[str], section_name: str, radius: int) -> D
             snippet["mode"] = "section"
             snippet["matched_section"] = section_name
             return snippet
-        if line_lower.startswith("\\section") or line_lower.startswith("#"):
+        if line_lower.startswith("\\bibliography") or line_lower.startswith("\\printbibliography"):
+            if any(token in {"references", "reference", "bibliography", "参考文献"} for token in section_tokens):
+                snippet = _snippet_from_lines(lines, idx + 1, max(radius, 6))
+                snippet["mode"] = "section"
+                snippet["matched_section"] = section_name
+                return snippet
+        if line_lower.startswith("\\section") or line_lower.startswith("\\subsection") or line_lower.startswith("#"):
             normalized_line = (
                 line_lower
                 .replace("\\section{", "")
@@ -882,6 +891,13 @@ async def _run_local_review_payload(
     enable_deep_review: bool,
     warning: Optional[str] = None,
 ) -> Dict[str, Any]:
+    evidence_bundle = await asyncio.to_thread(
+        build_evidence_bundle,
+        str(path),
+        template_name=req.template,
+        review_track=req.review_track,
+    )
+
     runtime = build_runtime(
         mode="web",
         enable_deep_review=enable_deep_review,
@@ -897,9 +913,34 @@ async def _run_local_review_payload(
     )
     result = await execute_review_task(runtime, task, enable_deep_review=enable_deep_review)
     payload = build_review_payload(result, plan_id=runtime.plan.plan_id)
+    payload.setdefault("meta", {})["architecture_version"] = "four_layer_component_first_v2"
     payload["sections"]["structure"] = (
         result.format_check.get("structure", {}) if isinstance(result.format_check, dict) else {}
     )
+
+    payload["sections"]["parse_layer"] = evidence_bundle
+    try:
+        component_payload = await asyncio.to_thread(
+            run_dify_component_classification,
+            str(path),
+            template_name=req.template,
+            review_track=req.review_track,
+            review_focus="format_and_structure",
+        )
+        component_sections = component_payload.get("sections") if isinstance(component_payload, dict) else {}
+        payload["sections"]["component_classification"] = (
+            (component_sections or {}).get("component_classification")
+            or component_payload.get("component_classification")
+            or {}
+        )
+        if component_sections and component_sections.get("font_profile"):
+            payload["sections"]["font_profile"] = component_sections.get("font_profile")
+    except Exception as exc:
+        component_warning = f"部件识别工作流执行失败，已保留本地审查结果: {exc}"
+        section_warnings = payload.setdefault("errors", [])
+        if component_warning not in section_warnings:
+            section_warnings.append(component_warning)
+
     return _annotate_review_payload(payload, backend="local_runtime", warning=warning)
 
 
@@ -1008,6 +1049,22 @@ async def layered_verify(req: LayerRequest):
         run_layered_verification,
         bundle,
         detailed_mode=req.detailed_mode,
+    )
+    return api_success(result)
+
+
+@app.post("/api/classify/components")
+async def classify_components(req: LayerRequest):
+    """执行部件识别链路，输出 component map 与字体摘要。"""
+    path = Path(req.paper_path)
+    if not path.exists():
+        raise HTTPException(404, f"文件不存在: {req.paper_path}")
+    _ensure_supported_paper_path(path)
+    result = await asyncio.to_thread(
+        run_dify_component_classification,
+        str(path),
+        template_name=req.template,
+        review_track=req.review_track,
     )
     return api_success(result)
 

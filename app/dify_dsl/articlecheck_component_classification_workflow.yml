@@ -1,0 +1,277 @@
+app:
+  description: 先按页和证据块识别论文格式部件边界，为后续格式审改提供更稳定的部件地图
+  icon: "\U0001F9E9"
+  icon_background: '#E8F0FF'
+  icon_type: emoji
+  mode: workflow
+  name: ArticleCheck 部件识别工作流
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.4.3@84d4aae2c55724f6cdaecfadceed061d7e6b6693ae8945ea2dcd155f280743ef
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 50
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1720001001001-source-1720001002001-target
+      source: '1720001001001'
+      sourceHandle: source
+      target: '1720001002001'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        sourceType: llm
+        targetType: end
+      id: 1720001002001-source-1720001003001-target
+      source: '1720001002001'
+      sourceHandle: source
+      target: '1720001003001'
+      targetHandle: target
+      type: custom
+    nodes:
+    - data:
+        desc: 接收文档读取结果、字体概览和规则画像，输出论文部件边界地图
+        selected: false
+        title: 开始
+        type: start
+        variables:
+        - label: paper_profile_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: paper_profile_json
+        - label: review_context_json
+          max_length: null
+          options: []
+          required: true
+          type: paragraph
+          variable: review_context_json
+        - label: evidence_index_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: evidence_index_json
+        - label: template_rule_profile_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: template_rule_profile_json
+        - label: requirement_rule_profile_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: requirement_rule_profile_json
+        - label: font_profile_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: font_profile_json
+        - label: 文件类型
+          max_length: 24
+          options:
+          - docx
+          - pdf
+          - latex
+          required: true
+          type: select
+          variable: file_type
+        - label: 审查轨道
+          max_length: 24
+          options:
+          - undergraduate
+          - graduate
+          - auto
+          required: true
+          type: select
+          variable: review_track
+      height: 360
+      id: '1720001001001'
+      position:
+        x: 80
+        y: 160
+      positionAbsolute:
+        x: 80
+        y: 160
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 识别封面、声明页、摘要、关键词、目录、正文和参考文献的边界与置信度
+        model:
+          completion_params:
+            temperature: 0.1
+            top_p: 1
+            max_tokens: 3000
+          mode: chat
+          name: gpt-4o-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - role: system
+          text: |-
+            你是论文格式部件识别助手。
+            你的任务是根据文档解析结果、证据索引、字体概览和北师大格式规则，先识别论文中的格式部件边界，再把结果输出为 JSON。
+
+            目标不是直接判错，而是先回答“哪一页 / 哪一段属于什么部件”。
+
+            只输出 JSON，不要输出解释。
+
+            输出字段必须包含：
+            - component_map
+            - page_roles
+            - confidence_summary
+            - review_hints
+            - manual_check_flags
+
+            规则：
+            1. 必须优先识别：cover、statement、title_page、abstract_zh、keywords_zh、abstract_en、keywords_en、toc、body、references。
+            2. cover 不能要求文档里显式出现“封面”字样；应结合第一页字段、表格、题名、作者、导师、院系、学号等综合判断。
+            3. 声明页（如“诚信承诺书”“论文使用授权说明”）必须单独标记为 statement，不能混入 cover。
+            4. 中文摘要边界必须限制在“摘要标题之后、关键词之前”；英文摘要同理。
+            5. references 只能包含参考文献章节，不能把正文中的编号引用混进去。
+            6. 如果置信度不足，不要直接判缺失，要在 manual_check_flags 中写明原因。
+            7. 尽量复用 evidence_index_json 中已有的 anchor_id、page、paragraph_index。
+            8. 如果 font_profile_json 提示某一部件字体与其他正文差异明显，可以写入 review_hints.component_font_signals。
+        - role: user
+          text: |-
+            paper_profile_json:
+            {{#1720001001001.paper_profile_json#}}
+
+            review_context_json:
+            {{#1720001001001.review_context_json#}}
+
+            evidence_index_json:
+            {{#1720001001001.evidence_index_json#}}
+
+            template_rule_profile_json:
+            {{#1720001001001.template_rule_profile_json#}}
+
+            requirement_rule_profile_json:
+            {{#1720001001001.requirement_rule_profile_json#}}
+
+            font_profile_json:
+            {{#1720001001001.font_profile_json#}}
+
+            file_type:
+            {{#1720001001001.file_type#}}
+
+            review_track:
+            {{#1720001001001.review_track#}}
+
+            请输出部件识别 JSON。
+        selected: false
+        structured_output_enabled: false
+        title: 部件识别引擎
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 120
+      id: '1720001002001'
+      position:
+        x: 410
+        y: 205
+      positionAbsolute:
+        x: 410
+        y: 205
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 返回部件识别结果
+        outputs:
+        - value_selector:
+          - '1720001002001'
+          - text
+          variable: component_map_json
+        selected: false
+        title: 结束
+        type: end
+      height: 92
+      id: '1720001003001'
+      position:
+        x: 730
+        y: 220
+      positionAbsolute:
+        x: 730
+        y: 220
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.85
+  rag_pipeline_variables: []

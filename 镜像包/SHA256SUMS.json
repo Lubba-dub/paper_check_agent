@@ -1,10 +1,10 @@
-﻿[
-    {
-        "Path":  "E:\\cocoon\\projects\\article_check\\交付版\\镜像包\\article-check_platform.tar",
-        "Hash":  "3C1695E7129A74C257C845688A4A067709318E476E42E17C5C8145685057D129"
-    },
-    {
-        "Path":  "E:\\cocoon\\projects\\article_check\\交付版\\镜像包\\nginx_alpine.tar",
-        "Hash":  "941615EBB76EB666C637DA2DF1B20608A7A653793D212C2951FACA79C1B4BD32"
-    }
+[
+  {
+    "file": "article-check_platform.tar",
+    "sha256": "3C1695E7129A74C257C845688A4A067709318E476E42E17C5C8145685057D129"
+  },
+  {
+    "file": "nginx_alpine.tar",
+    "sha256": "941615EBB76EB666C637DA2DF1B20608A7A653793D212C2951FACA79C1B4BD32"
+  }
 ]

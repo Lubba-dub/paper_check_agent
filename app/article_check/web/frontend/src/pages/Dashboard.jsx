@@ -4,43 +4,43 @@ import { Activity, FileCheck, FileText, ShieldAlert, Sparkles, TrendingUp } from
 
 export default function Dashboard({ status }) {
   const features = [
-    { icon: FileText, title: '一份能直接使用的审查报告', desc: '把格式问题、参考文献风险和修改建议整理成清楚易读的结果', tone: 'text-primary-700' },
-    { icon: ShieldAlert, title: '问题对应原文位置', desc: '看到问题的同时，也能定位到论文里的相关段落或片段', tone: 'text-rose-700' },
-    { icon: TrendingUp, title: '参考文献重点提醒', desc: '集中提示引文不一致、缺 DOI 和参考文献不完整等常见问题', tone: 'text-amber-700' },
-    { icon: Activity, title: '支持多篇一起看', desc: '单篇、批量结果都汇总到同一页面，方便连续审阅', tone: 'text-sky-700' },
-    { icon: Sparkles, title: '围绕报告继续追问', desc: '可以继续问“先改什么”“为什么这样判定”“证据在哪”', tone: 'text-violet-700' },
-    { icon: FileCheck, title: '便于打印和提交', desc: '支持查看正式报告、打印导出，方便给导师或学生直接使用', tone: 'text-emerald-700' },
+    { icon: FileText, title: '先知道这次该从哪改起', desc: '把问题轻重、修改建议和处理顺序放在一起，不用来回切换页面', tone: 'text-primary-700' },
+    { icon: ShieldAlert, title: '问题旁边直接给出原文位置', desc: '需要核对时可以马上展开相关片段，减少回到全文反复翻找', tone: 'text-rose-700' },
+    { icon: TrendingUp, title: '参考文献风险先单独拎出来', desc: '优先提示缺项、编号不一致、DOI 缺失等最常见的送审问题', tone: 'text-amber-700' },
+    { icon: Activity, title: '多篇论文可以连续处理', desc: '适合连续检查多名学生或同一篇论文的多轮版本，结果会集中留在一处', tone: 'text-sky-700' },
+    { icon: Sparkles, title: '拿不准的地方可以继续问清楚', desc: '可以继续问“先改哪条”“为什么算问题”“还有哪些没补齐”', tone: 'text-violet-700' },
+    { icon: FileCheck, title: '结果页方便打印和发给导师', desc: '支持查看正式报告与留档页面，便于自己修改或给导师快速过目', tone: 'text-emerald-700' },
   ];
   return (
     <div className="page-stack">
       <section className="hero-banner">
         <div className="hero-grid">
           <div className="space-y-5">
-            <div className="capsule capsule-primary">论文审查助手</div>
-            <h1 className="hero-title">把论文问题看清楚，也把修改顺序理清楚</h1>
+            <div className="capsule capsule-primary">送审前先看这里</div>
+            <h1 className="hero-title">先把最影响送审的问题找出来</h1>
             <p className="hero-text">
-              适合论文作者、导师和审改人员使用。上传论文后，你可以快速看到格式问题、参考文献风险、原文定位片段和可执行的修改建议，减少来回翻找和重复沟通。
+              上传论文后，会把格式问题、参考文献风险、原文对应位置和修改建议整理到同一页，方便作者逐条修改，也方便导师快速判断还差哪几步。
             </p>
             <div className="flex flex-wrap gap-3">
-              <Link to="/review" className="btn-primary">开始审查论文</Link>
+              <Link to="/review" className="btn-primary">上传论文开始检查</Link>
             </div>
           </div>
 
           <div className="hero-panel">
             <div className="hero-panel-row">
-              <span>系统状态</span>
+              <span>当前状态</span>
               <span className={`capsule ${status ? 'capsule-success' : 'capsule-danger'}`}>{status ? '在线' : '离线'}</span>
             </div>
             <div className="hero-panel-row">
-              <span>Dify</span>
-              <span>{status?.dify_enabled ? '已接入' : '待配置'}</span>
+              <span>智能检查</span>
+              <span>{status?.dify_enabled ? '已就绪' : '待配置'}</span>
             </div>
             <div className="hero-panel-row">
-              <span>模板数量</span>
+              <span>可用模板</span>
               <span>{status?.templates || 0}</span>
             </div>
             <div className="hero-panel-row">
-              <span>AI Provider</span>
+              <span>能力来源</span>
               <span>{status?.ai_provider ? String(status.ai_provider).toUpperCase() : '-'}</span>
             </div>
           </div>
@@ -51,8 +51,8 @@ export default function Dashboard({ status }) {
         <div className="surface-card">
           <div className="surface-card-head">
             <div>
-              <h2 className="surface-card-title">你可以在这里完成什么</h2>
-              <p className="surface-card-subtitle">围绕论文修改最常见的几个需求，把结果一次看清楚</p>
+              <h2 className="surface-card-title">你可以在这里完成这些事</h2>
+              <p className="surface-card-subtitle">把送审前最常见的检查动作收在一个页面里，尽量少切换</p>
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
@@ -73,16 +73,16 @@ export default function Dashboard({ status }) {
         <div className="surface-card">
           <div className="surface-card-head">
             <div>
-              <h2 className="surface-card-title">典型使用流程</h2>
-              <p className="surface-card-subtitle">从上传论文到确认修改重点，整个过程尽量放在同一页里完成</p>
+              <h2 className="surface-card-title">一般会这样使用</h2>
+              <p className="surface-card-subtitle">从上传到安排修改顺序，尽量把来回切换压到最少</p>
             </div>
           </div>
           <div className="space-y-4">
             {[
-              '先上传一篇或多篇论文，系统会生成清晰的审查结果。',
-              '你可以先看最影响提交的问题，再逐条查看证据和原文位置。',
-              '如果对判断结果有疑问，可以继续追问原因、依据和修改顺序。',
-              '最后把正式报告打印或导出，直接用于沟通、留档或修改跟进。',
+              '先上传需要检查的论文，页面会生成一份便于阅读的检查结果。',
+              '先看会影响送审和提交的重点问题，再决定修改顺序。',
+              '需要核对时，直接展开依据和原文片段，不必来回翻文档。',
+              '改完后再看正式报告，方便打印、留档或发给导师。',
             ].map((item) => (
               <div key={item} className="timeline-item">
                 <div className="timeline-dot" />

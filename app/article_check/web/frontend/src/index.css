@@ -305,8 +305,16 @@
     background-color: rgba(248, 250, 252, 0.7);
   }
 
+  .queue-file-icon-wrap {
+    @apply relative;
+  }
+
   .queue-file-icon {
     @apply flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm;
+  }
+
+  .queue-file-remove {
+    @apply absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600;
   }
 
   .queue-file-name {
@@ -423,6 +431,12 @@
     background-color: rgba(248, 250, 252, 0.75);
   }
 
+  .navigator-item-active {
+    @apply border-primary-200 bg-primary-50;
+    background-color: rgba(239, 246, 255, 0.86);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.14);
+  }
+
   .navigator-title {
     @apply line-clamp-2 text-sm font-medium text-slate-800;
   }
@@ -476,6 +490,12 @@
     background-color: rgba(248, 250, 252, 0.75);
   }
 
+  .evidence-card-active {
+    @apply border-primary-200 bg-primary-50;
+    background-color: rgba(239, 246, 255, 0.86);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+  }
+
   .evidence-card-head {
     @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between;
   }
@@ -490,6 +510,10 @@
 
   .evidence-card-actions {
     @apply mt-4 flex flex-wrap gap-3;
+  }
+
+  .issue-row-active {
+    background-color: rgba(239, 246, 255, 0.48);
   }
 
   .text-link {

@@ -202,14 +202,15 @@ workflow:
             - workflow_trace
 
             说明：
-            1. findings 用于统一问题列表，按严重程度排序。
+            1. findings 用于统一问题列表，必须按严重程度排序：critical -> major -> minor -> info。
             2. evidence_records 用于证据卡片，优先引用格式审改、文献核验和幻觉审查中的已有证据。
             3. priority_actions 用于修订行动清单。
             4. meta_delta 中可以输出 overall_score、risk_level、review_focus。
             5. 如果 report_focus 不为空，需要在 executive_summary 与 priority_actions 中体现。
             6. question_router_hints 用于后续报告问答智能体进行问题分流，例如总览、证据追问、引用追问、修订建议。
             7. 如果 evidence_index_json 中存在可复用锚点，evidence_records 必须优先复用对应 anchor_id，不要重新发明随机 evidence_id。
-            8. 每个 evidence_record 应尽量包含：
+            8. 在摘要、优先行动和 findings 中，应先呈现会影响送审或提交的 major / critical 问题，再呈现 minor 问题。
+            9. 每个 evidence_record 应尽量包含：
                - evidence_id
                - stage
                - source_type

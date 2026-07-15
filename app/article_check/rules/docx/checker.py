@@ -50,6 +50,12 @@ class DocxChecker:
             ("reference_missing", "参考文献", ["参考文献", "references", "bibliography"], "major"),
         ],
     }
+    COVER_EXCLUDE_MARKERS = {
+        "本人承诺", "学生签名", "论文使用授权说明", "诚信承诺书", "原创性声明", "使用授权说明",
+    }
+    STATEMENT_MARKERS = {
+        "诚信承诺书", "论文使用授权说明", "原创性声明", "使用授权说明",
+    }
 
     def __init__(
         self,
@@ -143,7 +149,7 @@ class DocxChecker:
 
     def _check_required_sections(self, doc, issues: List[Dict]):
         """检查 DOCX 是否包含基础论文结构。"""
-        text = "\n".join(para.text.strip() for para in doc.paragraphs if para.text and para.text.strip())
+        text = "\n".join(item.get("text", "") for item in self._iter_doc_blocks_with_pages(doc) if item.get("text"))
         normalized = self._normalize_text(text)
         required_sections = self.SECTION_REQUIREMENTS.get(
             self.review_track,
@@ -156,6 +162,20 @@ class DocxChecker:
         )
 
         for issue_type, label, aliases, severity in required_sections:
+            if issue_type == "cover_missing":
+                cover_state = self._detect_cover_state(doc)
+                if cover_state == "present":
+                    continue
+                if cover_state == "uncertain":
+                    issues.append({
+                        "type": "cover_manual_confirmation",
+                        "severity": "minor",
+                        "description": "首页疑似为封面，但自动识别不够稳定，建议人工确认。",
+                        "suggestion": "请人工确认第一页是否为封面，并核对题名、作者、导师等字段是否齐全。",
+                    })
+                    continue
+            if issue_type in {"copyright_missing", "title_page_missing"} and self._contains_statement_page(normalized):
+                continue
             if any(self._normalize_text(alias) in normalized for alias in aliases):
                 continue
             issues.append({
@@ -231,24 +251,29 @@ class DocxChecker:
                     })
 
     def _check_cover_page_layout(self, doc, issues: List[Dict]):
-        """检查封面/首页关键元素是否存在并大致位于合理位置。"""
-        front_paragraphs = []
-        for line_no, para in enumerate(doc.paragraphs, start=1):
-            text = para.text.strip()
-            if not text:
-                continue
-            if self._normalize_text(text) in {"摘要", "摘要：", "abstract", "引言", "前言", "绪论"}:
-                break
-            front_paragraphs.append((line_no, para))
-            if len(front_paragraphs) >= 12:
-                break
-
-        if not front_paragraphs:
+        """只检查第一页封面区域，避免把声明页和摘要页误当成封面。"""
+        blocks = self._iter_doc_blocks_with_pages(doc)
+        cover_blocks = [block for block in blocks if block.get("page") == 1 and self._is_cover_candidate_text(block.get("text", ""))]
+        if not cover_blocks:
             return
 
-        title_line, title_para = front_paragraphs[0]
-        title_text = title_para.text.strip()
-        title_size = self._get_paragraph_font_size(title_para)
+        paragraph_blocks = [block for block in cover_blocks if block.get("kind") == "paragraph"]
+        if not paragraph_blocks:
+            return
+
+        title_block = next(
+            (
+                block for block in paragraph_blocks
+                if not self._looks_like_author_line(block.get("text", ""))
+                and not re.search(r"(大学|学院|学校|导师|指导教师|专业|学号)", block.get("text", ""))
+                and len(block.get("text", "")) >= 6
+            ),
+            paragraph_blocks[0],
+        )
+        title_line = title_block.get("line")
+        title_para = title_block.get("obj")
+        title_text = title_block.get("text", "").strip()
+        title_size = self._get_paragraph_font_size(title_para) if title_para is not None else None
         if title_line > 3:
             issues.append({
                 "type": "cover_title_position",
@@ -257,7 +282,7 @@ class DocxChecker:
                 "description": "首页题名未出现在文档开头区域。",
                 "suggestion": "将论文题名置于首页靠前位置，保持封面层次清晰。",
             })
-        if title_para.alignment != 1:
+        if title_para is not None and title_para.alignment != 1:
             issues.append({
                 "type": "cover_title_alignment",
                 "severity": "major",
@@ -278,12 +303,18 @@ class DocxChecker:
         institution_found = False
         author_found = False
         advisor_found = False
-        for line_no, para in front_paragraphs[1:]:
-            text = para.text.strip()
+        for block in cover_blocks:
+            if block is title_block:
+                continue
+            text = block.get("text", "").strip()
+            para = block.get("obj")
+            line_no = block.get("line")
             normalized = self._normalize_text(text)
+            if any(marker in normalized for marker in map(self._normalize_text, self.COVER_EXCLUDE_MARKERS)):
+                continue
             if re.search(r"(大学|学院|学校)", text):
                 institution_found = True
-                if para.alignment != 1:
+                if para is not None and para.alignment != 1:
                     issues.append({
                         "type": "cover_institution_alignment",
                         "severity": "minor",
@@ -293,7 +324,7 @@ class DocxChecker:
                     })
             if re.search(r"(指导教师|导师|教授|副教授|讲师)", text):
                 advisor_found = True
-                if para.alignment != 1:
+                if para is not None and para.alignment != 1:
                     issues.append({
                         "type": "cover_advisor_alignment",
                         "severity": "minor",
@@ -303,7 +334,7 @@ class DocxChecker:
                     })
             if self._looks_like_author_line(text):
                 author_found = True
-                if para.alignment != 1:
+                if para is not None and para.alignment != 1:
                     issues.append({
                         "type": "cover_author_alignment",
                         "severity": "minor",
@@ -695,8 +726,8 @@ class DocxChecker:
         normalized_aliases = {self._normalize_text(alias) for alias in aliases}
         normalized_stops = {self._normalize_text(alias) for alias in stop_aliases}
 
-        for para in doc.paragraphs:
-            text = para.text.strip()
+        for block in self._iter_doc_blocks_with_pages(doc):
+            text = block.get("text", "").strip()
             if not text:
                 continue
             normalized = self._normalize_text(text).rstrip(":：")
@@ -708,3 +739,67 @@ class DocxChecker:
             if in_section:
                 collected.append(text)
         return "\n".join(collected).strip()
+
+    def _iter_doc_blocks_with_pages(self, doc) -> List[Dict[str, Any]]:
+        para_map = {id(para._p): (line_no, para) for line_no, para in enumerate(doc.paragraphs, start=1)}
+        table_map = {id(table._tbl): table for table in doc.tables}
+        blocks: List[Dict[str, Any]] = []
+        current_page = 1
+
+        for child in doc.element.body.iterchildren():
+            tag = child.tag.split("}")[-1]
+            if tag == "p" and id(child) in para_map:
+                line_no, para = para_map[id(child)]
+                if para.paragraph_format and para.paragraph_format.page_break_before and blocks:
+                    current_page += 1
+                text = para.text.strip()
+                if text:
+                    blocks.append({"kind": "paragraph", "obj": para, "line": line_no, "page": current_page, "text": text})
+                if self._paragraph_starts_new_page_after(para):
+                    current_page += 1
+            elif tag == "tbl" and id(child) in table_map:
+                table = table_map[id(child)]
+                row_texts = []
+                for row in table.rows:
+                    cells = [" ".join(p.text.strip() for p in cell.paragraphs if p.text and p.text.strip()) for cell in row.cells]
+                    text = " | ".join(item.strip() for item in cells if item and item.strip()).strip()
+                    if text:
+                        row_texts.append(text)
+                table_text = "\n".join(row_texts).strip()
+                if table_text:
+                    blocks.append({"kind": "table", "obj": table, "line": None, "page": current_page, "text": table_text})
+        return blocks
+
+    def _paragraph_starts_new_page_after(self, para) -> bool:
+        if para._element.xpath('./*[local-name()="pPr"]/*[local-name()="sectPr"]'):
+            return True
+        return bool(para._element.xpath('.//*[local-name()="br" and @*[local-name()="type"]="page"]'))
+
+    def _is_cover_candidate_text(self, text: str) -> bool:
+        normalized = self._normalize_text(text)
+        if not normalized:
+            return False
+        if normalized in {"摘要", "摘要：", "abstract", "关键词", "目录", "引言", "前言", "绪论"}:
+            return False
+        if any(marker in normalized for marker in map(self._normalize_text, self.STATEMENT_MARKERS)):
+            return False
+        return True
+
+    def _contains_statement_page(self, normalized_text: str) -> bool:
+        return any(marker in normalized_text for marker in map(self._normalize_text, self.STATEMENT_MARKERS))
+
+    def _detect_cover_state(self, doc) -> str:
+        blocks = [block for block in self._iter_doc_blocks_with_pages(doc) if block.get("page") == 1 and self._is_cover_candidate_text(block.get("text", ""))]
+        if not blocks:
+            return "missing"
+        joined = "\n".join(block.get("text", "") for block in blocks)
+        field_hits = sum(
+            1 for marker in ["大学", "学院", "论文", "姓名", "学号", "导师", "指导教师", "专业"]
+            if marker in joined
+        )
+        title_hits = len(re.findall(r"[\u4e00-\u9fff]{4,}", joined))
+        if field_hits >= 3 and title_hits >= 2:
+            return "present"
+        if field_hits >= 2:
+            return "uncertain"
+        return "missing"

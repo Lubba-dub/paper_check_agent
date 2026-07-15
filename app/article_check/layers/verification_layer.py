@@ -309,7 +309,7 @@ def run_layered_verification(
     suspicious_refs: List[Dict[str, Any]] = []
 
     for ref, item in zip(refs[: len(fast_items)], fast_items):
-        if not ref.get("doi"):
+        if not ref.get("doi") and ReferenceValidator.requires_doi_metadata(ref):
             issues.append(
                 _build_ref_issue(
                     ref,
@@ -418,4 +418,5 @@ def run_layered_verification(
         ],
         "score": max(0.0, round(1.0 - len(issues) * 0.08, 3)),
         "reference_stats": ref_stats,
+        "parsed_entry_count": len(refs),
     }

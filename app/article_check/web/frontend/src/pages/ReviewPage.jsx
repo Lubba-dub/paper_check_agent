@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, FileText, Loader2, Search, Upload } from 'lucide-react';
+import { FileText, Loader2, Search, Telescope, Upload, X } from 'lucide-react';
 import { api } from '../api/client';
 import ReviewStudio from '../components/ReviewStudio';
 
@@ -21,6 +21,38 @@ export default function ReviewPage() {
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef();
   const focusTimerRef = useRef(null);
+  const snippetRequestRef = useRef(0);
+
+  const pickDefaultDetailTarget = useCallback((entry) => {
+    const firstEvidence = entry?.review?.evidence_records?.[0];
+    const firstNodeId = Object.keys(entry?.review?.workflow?.graph || {})[0];
+    if (firstEvidence?.evidence_id) {
+      return { type: 'evidence', id: firstEvidence.evidence_id };
+    }
+    if (firstNodeId) {
+      return { type: 'workflow', id: firstNodeId };
+    }
+    return null;
+  }, []);
+
+  const clearDetailPanel = useCallback(() => {
+    snippetRequestRef.current += 1;
+    setDetailTarget(null);
+    setSourceSnippet(null);
+    setSnippetLoading(false);
+    setFocusedFragmentId(null);
+  }, []);
+
+  const handleSelectResult = useCallback((nextId) => {
+    setSelectedResultId(nextId);
+    const nextEntry = results.find((item) => item.id === nextId) || null;
+    snippetRequestRef.current += 1;
+    setDetailTarget(pickDefaultDetailTarget(nextEntry));
+    setSourceSnippet(null);
+    setSnippetLoading(false);
+    setFocusedFragmentId(null);
+    setAnswer('');
+  }, [results, pickDefaultDetailTarget]);
 
   const handleUpload = useCallback(async (event) => {
     const selectedFiles = Array.from(event.target.files || []);
@@ -43,6 +75,10 @@ export default function ReviewPage() {
     }
   }, []);
 
+  const removeQueuedFile = useCallback((target) => {
+    setFiles((prev) => prev.filter((file) => (file.path || `${file.name}-${file.size}`) !== target));
+  }, []);
+
   const runReview = useCallback(async () => {
     const queue = dedupeFiles(files);
     if (!queue.length) return;
@@ -50,7 +86,7 @@ export default function ReviewPage() {
     setLoading(true);
     setResults([]);
     setSelectedResultId(null);
-    setDetailTarget(null);
+    clearDetailPanel();
     setAnswer('');
     try {
       const allResults = [];
@@ -69,19 +105,13 @@ export default function ReviewPage() {
       setResults(allResults);
       if (allResults[0]) {
         setSelectedResultId(allResults[0].id);
-        const firstEvidence = allResults[0].review?.evidence_records?.[0];
-        const firstNodeId = Object.keys(allResults[0].review?.workflow?.graph || {})[0];
-        if (firstEvidence?.evidence_id) {
-          setDetailTarget({ type: 'evidence', id: firstEvidence.evidence_id });
-        } else if (firstNodeId) {
-          setDetailTarget({ type: 'workflow', id: firstNodeId });
-        }
+        setDetailTarget(pickDefaultDetailTarget(allResults[0]));
       }
     } catch (error) {
       alert(`审查失败: ${error.message}`);
     }
     setLoading(false);
-  }, [files, deepReview, reviewTrack]);
+  }, [files, deepReview, reviewTrack, clearDetailPanel, pickDefaultDetailTarget]);
 
   const runBatchStream = useCallback(async () => {
     const queue = dedupeFiles(files);
@@ -90,7 +120,7 @@ export default function ReviewPage() {
     setStreaming(true);
     setResults([]);
     setSelectedResultId(null);
-    setDetailTarget(null);
+    clearDetailPanel();
     setAnswer('');
     try {
       const response = await api.batchStream(
@@ -127,6 +157,7 @@ export default function ReviewPage() {
             const next = dedupeResults([...prev, nextEntry]);
             if (!selectedResultId && next[0]) {
               setSelectedResultId(next[0].id);
+              setDetailTarget(pickDefaultDetailTarget(next[0]));
             }
             return next;
           });
@@ -136,7 +167,7 @@ export default function ReviewPage() {
       alert(`流式审查失败: ${error.message}`);
     }
     setStreaming(false);
-  }, [files, deepReview, reviewTrack]);
+  }, [files, deepReview, reviewTrack, clearDetailPanel, pickDefaultDetailTarget, selectedResultId]);
 
   useEffect(() => {
     if (!results.length) {
@@ -148,15 +179,9 @@ export default function ReviewPage() {
     if (!selectedResultId || !results.some((item) => item.id === selectedResultId)) {
       const first = results[0];
       setSelectedResultId(first.id);
-      const firstEvidence = first.review?.evidence_records?.[0];
-      const firstNodeId = Object.keys(first.review?.workflow?.graph || {})[0];
-      if (firstEvidence?.evidence_id) {
-        setDetailTarget({ type: 'evidence', id: firstEvidence.evidence_id });
-      } else if (firstNodeId) {
-        setDetailTarget({ type: 'workflow', id: firstNodeId });
-      }
+      setDetailTarget(pickDefaultDetailTarget(first));
     }
-  }, [results, selectedResultId]);
+  }, [results, selectedResultId, pickDefaultDetailTarget]);
 
   useEffect(() => {
     if (!focusedFragmentId) return;
@@ -185,16 +210,19 @@ export default function ReviewPage() {
       return;
     }
 
+    const requestId = snippetRequestRef.current + 1;
+    snippetRequestRef.current = requestId;
     let cancelled = false;
+    setSourceSnippet(null);
     setSnippetLoading(true);
     api.reportSourceSnippet(selectedReview, detailTarget.id, 4)
       .then((response) => {
-        if (!cancelled) {
+        if (!cancelled && snippetRequestRef.current === requestId) {
           setSourceSnippet(response?.data || null);
         }
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (!cancelled && snippetRequestRef.current === requestId) {
           setSourceSnippet({
             source_name: '片段预览不可用',
             claim: error.message,
@@ -206,7 +234,7 @@ export default function ReviewPage() {
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!cancelled && snippetRequestRef.current === requestId) {
           setSnippetLoading(false);
         }
       });
@@ -254,25 +282,25 @@ export default function ReviewPage() {
       <section className="command-deck compact-command-deck">
         <div className="flex flex-col gap-8 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-3xl space-y-4">
-            <div className="capsule capsule-primary">论文审查</div>
+            <div className="capsule capsule-primary">上传论文</div>
             <div>
-              <h1 className="page-title">先找出最需要优先修改的问题</h1>
+              <h1 className="page-title">先看哪里最该改，再决定怎么改</h1>
               <p className="page-subtitle">
-                先上传论文，再选择适用的审查类型。系统会把主要问题、原文定位、修改建议和答疑结果放在同一页，方便作者逐项修改，也方便导师快速查看重点。
+                上传论文后，页面会按问题轻重、原文位置和修改建议整理结果，方便你沿着同一条线逐项处理。
               </p>
             </div>
             <div className="flex flex-wrap gap-3 text-sm text-slate-500">
-              <span className="capsule capsule-muted">{queuedFiles.length} 篇待处理论文</span>
-              <span className="capsule capsule-muted">{deepReview ? '已开启深入审查' : '当前为快速审查'}</span>
-              <span className="capsule capsule-muted">{reviewTrack === 'undergraduate' ? '按本科论文要求审查' : '按研究生论文要求审查'}</span>
+              <span className="capsule capsule-muted">{queuedFiles.length} 篇待检查论文</span>
+              <span className="capsule capsule-muted">{deepReview ? '同时检查内容与表达' : '先做常规检查'}</span>
+              <span className="capsule capsule-muted">{reviewTrack === 'undergraduate' ? '本科论文标准' : '研究生论文标准'}</span>
             </div>
           </div>
 
           <div className="upload-panel space-y-4">
             <div className="upload-panel-head">
               <div>
-                <div className="upload-panel-title">开始审查</div>
-                <div className="upload-panel-subtitle">支持单篇和多篇论文连续处理，结果会自动汇总到下方报告区</div>
+                <div className="upload-panel-title">添加论文并开始检查</div>
+                <div className="upload-panel-subtitle">支持单篇细看，也支持连续检查多篇，结果会自动留在下方方便对比</div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -295,7 +323,7 @@ export default function ReviewPage() {
             <div className="flex flex-wrap items-center gap-3">
               <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} className="btn-primary inline-flex items-center gap-2">
                 <Upload className="h-4 w-4" />
-                {uploading ? '上传中...' : '选择论文文件'}
+                {uploading ? '上传中...' : '添加论文文件'}
               </button>
               <input
                 ref={inputRef}
@@ -307,24 +335,34 @@ export default function ReviewPage() {
               />
               <button type="button" onClick={runReview} disabled={loading || !queuedFiles.length} className="btn-outline inline-flex items-center gap-2">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                开始审查
+                开始检查
               </button>
               <button type="button" onClick={runBatchStream} disabled={streaming || !queuedFiles.length} className="btn-outline inline-flex items-center gap-2">
-                {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-                连续处理多篇
+                {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Telescope className="h-4 w-4" />}
+                连续检查多篇
               </button>
             </div>
             <label className="inline-flex items-center gap-2 pt-1 text-sm text-slate-600">
               <input type="checkbox" checked={deepReview} onChange={(event) => setDeepReview(event.target.checked)} className="rounded border-slate-300" />
-              开启更细致的内容审查
+              同时做更细的内容与表达检查
             </label>
             <div className="queue-files">
               {queuedFiles.length === 0 && <div className="text-sm text-slate-500">还没有添加论文。当前支持 `tex / docx / pdf` 三类文件。</div>}
               {queuedFiles.map((file) => (
                 <div key={`${file.path}-${file.name}`} className="queue-file-item">
                   <div className="flex items-center gap-3">
-                    <div className="queue-file-icon">
+                    <div className="queue-file-icon-wrap">
+                      <button
+                        type="button"
+                        className="queue-file-remove"
+                        onClick={() => removeQueuedFile(file.path || `${file.name}-${file.size}`)}
+                        aria-label={`删除 ${file.name}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                      <div className="queue-file-icon">
                       <FileText className="h-4 w-4" />
+                      </div>
                     </div>
                     <div>
                       <div className="queue-file-name">{file.name}</div>
@@ -341,7 +379,7 @@ export default function ReviewPage() {
       <ReviewStudio
         results={results}
         selectedResultId={selectedResultId}
-        onSelectResult={setSelectedResultId}
+        onSelectResult={handleSelectResult}
         detailTarget={detailTarget}
         onSelectWorkflow={(id) => setDetailTarget({ type: 'workflow', id })}
         onSelectEvidence={(id) => setDetailTarget({ type: 'evidence', id })}

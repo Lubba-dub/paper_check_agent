@@ -21,7 +21,7 @@ import {
 
 const DEMO_REPORT = {
   meta: {
-    paper_title: '模板示例：本科毕业论文审查报告',
+    paper_title: '示例：本科毕业论文送审前检查报告',
     task_id: 'template-demo',
     overall_score: 0.71,
     duration: 18.4,
@@ -155,11 +155,11 @@ const DEMO_REPORT = {
       },
     ],
   },
-  question_router_hints: ['总览结论', '格式问题', '参考文献', '修订建议'],
+  question_router_hints: ['整体结论', '格式修改', '参考文献', '下一步怎么改'],
   qa_seed_questions: [
-    '请按优先级总结最需要先改的 3 个问题。',
-    '哪些问题会直接影响论文提交？',
-    '请说明参考文献部分最需要补强的地方。',
+    '请按轻重缓急总结最需要先改的 3 个问题。',
+    '哪些地方会直接影响送审或提交？',
+    '请说明参考文献部分最需要先补齐什么。',
   ],
   workflow: {
     graph: {
@@ -216,6 +216,7 @@ export default function ReviewStudio({
   const qaSeedQuestions = useMemo(() => extractSuggestionQuestions(review, reportGeneration), [review, reportGeneration]);
   const routerHints = useMemo(() => extractRouterHints(review, reportGeneration), [review, reportGeneration]);
   const riskMatrixItems = useMemo(() => extractRiskMatrixItems(reportGeneration), [reportGeneration]);
+  const activeEvidenceId = detailTarget?.type === 'evidence' ? detailTarget.id : null;
 
   return (
     <div className="space-y-8">
@@ -225,7 +226,7 @@ export default function ReviewStudio({
             <div className="flex flex-wrap items-center gap-3">
               <span className="capsule capsule-primary">
                 <Files className="h-3.5 w-3.5" />
-                {usingTemplate ? '报告样例预览' : '论文审查结果'}
+                {usingTemplate ? '示例结果预览' : '本次检查结果'}
               </span>
               <span className="capsule capsule-muted">
                 <Gauge className="h-3.5 w-3.5" />
@@ -233,17 +234,17 @@ export default function ReviewStudio({
               </span>
               <span className="capsule capsule-muted">
                 <ScanSearch className="h-3.5 w-3.5" />
-                任务编号 {review.meta?.task_id || '-'}
+                当前文件 {displayTitle}
               </span>
             </div>
 
             <div className="space-y-3">
-              <div className="report-kicker">本次审查概览</div>
+              <div className="report-kicker">这次检查的结论</div>
               <h1 className="report-title">
                 {displayTitle}
               </h1>
               <p className="report-subtitle">
-                按“先看重点问题，再看证据位置，最后看修改建议”的顺序组织，方便作者直接改稿，也方便导师快速了解论文当前最需要处理的内容。
+                按“先看影响送审的问题，再核对依据，最后安排修改顺序”的方式整理，适合作者自己逐条修改，也方便导师快速把关。
               </p>
             </div>
 
@@ -256,11 +257,11 @@ export default function ReviewStudio({
             <div className="flex flex-wrap gap-3">
               <button type="button" className="btn-primary" onClick={onOpenFormalReport} disabled={usingTemplate}>
                 <ExternalLink className="h-4 w-4" />
-                查看正式报告
+                打开正式报告
               </button>
               <button type="button" className="btn-outline" onClick={onPrintFormalReport} disabled={usingTemplate}>
                 <Printer className="h-4 w-4" />
-                打印 / 导出 PDF
+                打印 / 另存 PDF
               </button>
             </div>
           </div>
@@ -268,7 +269,7 @@ export default function ReviewStudio({
           <div className="report-brief">
             <div className="report-brief-header">
               <div>
-                <div className="report-brief-label">整体建议</div>
+                <div className="report-brief-label">提交前建议</div>
                 <div className="report-brief-value">{formatScore(review.meta?.overall_score)}</div>
               </div>
               <div className={`risk-orb ${scoreToneClass(review.meta?.overall_score)}`}>
@@ -296,8 +297,8 @@ export default function ReviewStudio({
 
       <div className="grid gap-6">
         <SurfaceCard
-          title="正式报告预览"
-          subtitle="可直接用于打印、留档或与导师沟通的报告页面"
+            title="可打印报告"
+            subtitle="适合打印、留档或直接发给导师查看的页面"
           icon={Printer}
         >
           {usingTemplate || !reportFileUrl ? (
@@ -317,7 +318,7 @@ export default function ReviewStudio({
       <section className="space-y-6 min-w-0">
         <div className="grid gap-6 xl:grid-cols-[1.05fr,0.95fr]">
           <SurfaceCard
-            title="审查结果列表"
+            title="本次已检查论文"
             subtitle={results.length ? `${results.length} 份论文已生成结果` : '当前显示的是示例报告'}
             icon={Files}
           >
@@ -339,7 +340,7 @@ export default function ReviewStudio({
                       </span>
                     </div>
                     <div className="queue-meta">
-                      <span>{meta.task_id || 'template-demo'}</span>
+                      <span>{getQueueTitle(entry)}</span>
                       <span>{entry.review?.summary?.finding_count ?? 0} 条发现</span>
                     </div>
                   </button>
@@ -349,8 +350,8 @@ export default function ReviewStudio({
           </SurfaceCard>
 
           <SurfaceCard
-            title="快速查看重点"
-            subtitle="优先展示最值得先看的问题和可定位证据"
+            title="优先处理这些问题"
+            subtitle="优先展示最值得先处理的问题和可定位证据"
             icon={LocateFixed}
           >
             <div className="space-y-2.5">
@@ -362,7 +363,7 @@ export default function ReviewStudio({
                   key={item.key}
                   type="button"
                   onClick={() => onJumpEvidence?.(item.id)}
-                  className="navigator-item"
+                  className={`navigator-item ${activeEvidenceId === item.id ? 'navigator-item-active' : ''}`}
                 >
                   <div className={`severity-dot ${severityColor(item.severity)}`} />
                   <div className="flex-1 text-left">
@@ -379,7 +380,7 @@ export default function ReviewStudio({
         <div className="grid gap-6">
           <SurfaceCard
             title="格式问题"
-            subtitle="重点查看章节缺失、排版不一致和模板不符合之处"
+            subtitle="先看会被模板或学院规范卡住的地方"
             icon={FileWarning}
             actionLabel={formatIssues.length ? `${formatIssues.length} 项` : '无'}
           >
@@ -388,12 +389,13 @@ export default function ReviewStudio({
               items={formatIssues}
               onLocate={onSelectEvidence}
               onJump={onJumpEvidence}
+              activeEvidenceId={activeEvidenceId}
             />
           </SurfaceCard>
 
           <SurfaceCard
             title="参考文献问题"
-            subtitle="重点查看引用不一致、参考文献缺失和可验证性风险"
+            subtitle="先看缺项、编号、DOI 和引用闭环问题"
             icon={BookMarked}
             actionLabel={referenceIssues.length ? `${referenceIssues.length} 项` : '无'}
           >
@@ -402,14 +404,15 @@ export default function ReviewStudio({
               items={referenceIssues}
               onLocate={onSelectEvidence}
               onJump={onJumpEvidence}
+              activeEvidenceId={activeEvidenceId}
             />
           </SurfaceCard>
         </div>
 
         <div className="grid gap-6 2xl:grid-cols-[1.05fr,0.95fr]">
           <SurfaceCard
-            title="问题依据与定位"
-            subtitle="这里汇总每个重点问题的证据摘要，并支持跳转查看"
+            title="对应依据与原文"
+            subtitle="每条重点问题尽量给出依据摘要和原文落点"
             icon={ShieldAlert}
           >
             <div className="space-y-4">
@@ -420,13 +423,15 @@ export default function ReviewStudio({
                 <div
                   key={record.evidence_id}
                   id={`report-evidence-${slugify(record.evidence_id)}`}
-                  className="evidence-card"
+                  className={`evidence-card ${activeEvidenceId === record.evidence_id ? 'evidence-card-active' : ''}`}
                 >
                   <div className="evidence-card-head">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`severity-pill ${severityPillClass(record.severity)}`}>{record.severity || 'info'}</span>
                       <span className="mini-meta">{record.stage || '-'}</span>
-                      <span className="mini-meta">{formatLocation(record.location)}</span>
+                      {formatLocation(record.location, '') && (
+                        <span className="mini-meta">{formatLocation(record.location, '')}</span>
+                      )}
                       {formatEvidenceAnchor(record) && (
                         <span className="mini-meta">{formatEvidenceAnchor(record)}</span>
                       )}
@@ -441,7 +446,7 @@ export default function ReviewStudio({
                   )}
                   <div className="evidence-card-actions">
                     <button type="button" className="btn-primary" onClick={() => onJumpEvidence?.(record.evidence_id)}>
-                      跳转到对应片段
+                        定位原文
                     </button>
                   </div>
                 </div>
@@ -450,8 +455,8 @@ export default function ReviewStudio({
           </SurfaceCard>
 
           <SurfaceCard
-            title="原文对应位置"
-            subtitle="选中某条问题后，这里会显示论文中的相关原文片段"
+            title="原文片段"
+            subtitle="选中问题后，这里会显示论文中的相关片段，方便边看边改"
             icon={ScanLine}
           >
             <SourceSnippetPanel snippetLoading={snippetLoading} sourceSnippet={sourceSnippet} />
@@ -460,8 +465,8 @@ export default function ReviewStudio({
 
         <div className="grid gap-6 2xl:grid-cols-[0.95fr,1.05fr]">
           <SurfaceCard
-            title="建议先这样修改"
-            subtitle="按照轻重缓急整理成可执行的修改顺序"
+            title="推荐修改顺序"
+            subtitle="把修改顺序排出来，先动影响提交的，再处理细节"
             icon={ListChecks}
           >
             <div className="space-y-4">
@@ -488,8 +493,8 @@ export default function ReviewStudio({
           </SurfaceCard>
 
           <SurfaceCard
-            title="内容与写作提醒"
-            subtitle="保留最影响论文表达质量和结构完整性的提醒"
+            title="内容表达提醒"
+            subtitle="保留会影响表达、结构和论证完整性的提醒"
             icon={Flag}
           >
             <div className="space-y-3">
@@ -509,13 +514,13 @@ export default function ReviewStudio({
           </SurfaceCard>
 
           <SurfaceCard
-            title="进一步关注点"
-            subtitle="补充展示风险层级、提问方向和提交前准备情况"
+            title="提交前再确认"
+            subtitle="补充提交风险和可以继续追问的话题"
             icon={Sparkles}
           >
             <div className="space-y-4">
               {riskMatrixItems.length === 0 && routerHints.length === 0 && (
-                <EmptyState text="当前报告尚未返回可展示的增强字段。" />
+                <EmptyState text="当前还没有更多补充提醒。" />
               )}
               {riskMatrixItems.length > 0 && (
                 <div className="space-y-3">
@@ -532,7 +537,7 @@ export default function ReviewStudio({
               )}
               {routerHints.length > 0 && (
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">建议继续追问</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">还可以继续问</div>
                   <div className="flex flex-wrap gap-2">
                     {routerHints.map((hint) => (
                       <span key={hint} className="capsule capsule-muted">{hint}</span>
@@ -544,14 +549,14 @@ export default function ReviewStudio({
           </SurfaceCard>
 
           <SurfaceCard
-            title="继续追问这份报告"
-            subtitle="可以继续问“先改什么”“为什么这样判断”“证据在哪里”"
+            title="围绕这份结果继续问"
+            subtitle="可以继续问“先改哪几项”“这条依据是什么”“还有什么没补齐”"
             icon={Bot}
           >
             <div className="space-y-4">
               {qaSeedQuestions.length > 0 && (
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">可直接使用的问题</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">可以直接这样问</div>
                   <div className="flex flex-wrap gap-2">
                     {qaSeedQuestions.map((item) => (
                       <button
@@ -567,11 +572,11 @@ export default function ReviewStudio({
                 </div>
               )}
               <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">你的问题</div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">想进一步确认什么</div>
                 <textarea
                   value={question}
                   onChange={(event) => onQuestionChange?.(event.target.value)}
-                  placeholder="例如：请告诉我最应该先改的 3 个问题，并说明对应证据。"
+                  placeholder="例如：请按轻重缓急列出最该先改的 3 个问题，并说明依据。"
                   className="min-h-28 w-full resize-y border-0 bg-transparent p-0 text-sm leading-7 text-slate-700 outline-none placeholder:text-slate-400"
                 />
               </div>
@@ -583,10 +588,10 @@ export default function ReviewStudio({
                   className="btn-primary inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Sparkles className="h-4 w-4" />
-                  {asking ? '生成中...' : '生成答复'}
+                  {asking ? '整理中...' : '生成说明'}
                 </button>
                 {usingTemplate && (
-                  <span className="capsule capsule-muted">模板模式下不发起真实问答</span>
+                  <span className="capsule capsule-muted">示例模式下不发起真实问答</span>
                 )}
               </div>
               <div className="answer-panel answer-markdown">
@@ -635,7 +640,7 @@ function MetricCard({ label, value, detail, toneClass, icon: Icon }) {
   );
 }
 
-function IssueTable({ items, emptyText, onLocate, onJump }) {
+function IssueTable({ items, emptyText, onLocate, onJump, activeEvidenceId }) {
   if (!items.length) {
     return <EmptyState text={emptyText} />;
   }
@@ -655,7 +660,7 @@ function IssueTable({ items, emptyText, onLocate, onJump }) {
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white/80 text-sm text-slate-700">
             {items.map((item) => (
-              <tr key={item.key} className="align-top">
+              <tr key={item.key} className={`align-top ${activeEvidenceId === item.evidenceId ? 'issue-row-active' : ''}`}>
                 <td className="px-4 py-4">
                   <span className={`severity-pill ${severityPillClass(item.severity)}`}>{item.severity || 'info'}</span>
                 </td>
@@ -673,12 +678,12 @@ function IssueTable({ items, emptyText, onLocate, onJump }) {
                   <div className="flex flex-wrap justify-end gap-2">
                     {item.evidenceId && (
                       <button type="button" className="btn-outline" onClick={() => onLocate?.(item.evidenceId)}>
-                        详情
+                        查看依据
                       </button>
                     )}
                     {item.evidenceId && (
                       <button type="button" className="btn-primary" onClick={() => onJump?.(item.evidenceId)}>
-                        跳转
+                        定位原文
                       </button>
                     )}
                   </div>
@@ -696,7 +701,7 @@ function EmptyState({ text }) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500">
       <Files className="mx-auto mb-3 h-5 w-5 text-slate-400" />
-      <div className="mb-1 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">暂无内容</div>
+      <div className="mb-1 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">暂时还没有内容</div>
       {text}
     </div>
   );
@@ -716,7 +721,10 @@ function SourceSnippetPanel({ snippetLoading, sourceSnippet }) {
   const snippetMode = formatSnippetMode(sourceSnippet?.snippet?.mode);
   const anchorText = formatSourceAnchor(sourceSnippet);
   const hitHint = sourceSnippet?.snippet?.matched_hint || '';
-  const pageText = sourceSnippet?.snippet?.page ? `第 ${sourceSnippet.snippet.page} 页` : '未标记';
+  const pageText = sourceSnippet?.snippet?.page ? `第 ${sourceSnippet.snippet.page} 页` : '';
+  const snippetSummary = sourceSnippet?.snippet?.summary && sourceSnippet?.snippet?.summary !== '未提供定位信息'
+    ? sourceSnippet.snippet.summary
+    : '';
   return (
     <div className="space-y-4">
       <div className="snippet-header">
@@ -727,30 +735,32 @@ function SourceSnippetPanel({ snippetLoading, sourceSnippet }) {
         <span className="capsule capsule-muted">{sourceSnippet?.snippet?.source_kind || 'unknown'}</span>
       </div>
       <div className="snippet-summary-grid">
+        {snippetSummary && (
+          <div className="snippet-summary-card">
+            <div className="snippet-summary-label">当前位置说明</div>
+            <div className="snippet-summary-value">{snippetSummary}</div>
+          </div>
+        )}
         <div className="snippet-summary-card">
-          <div className="snippet-summary-label">定位摘要</div>
-          <div className="snippet-summary-value">{sourceSnippet?.snippet?.summary || '未提供定位信息'}</div>
-        </div>
-        <div className="snippet-summary-card">
-          <div className="snippet-summary-label">定位模式</div>
+          <div className="snippet-summary-label">找到方式</div>
           <div className="snippet-summary-value">{snippetMode}</div>
         </div>
         <div className="snippet-summary-card">
-          <div className="snippet-summary-label">定位锚点</div>
+          <div className="snippet-summary-label">命中位置</div>
           <div className="snippet-summary-value">{anchorText}</div>
         </div>
         <div className="snippet-summary-card">
-          <div className="snippet-summary-label">焦点行</div>
+          <div className="snippet-summary-label">对应行号</div>
           <div className="snippet-summary-value">{focusLine || '章节匹配 / 未知'}</div>
         </div>
         <div className="snippet-summary-card">
-          <div className="snippet-summary-label">页面 / 命中</div>
-          <div className="snippet-summary-value">{hitHint ? `${pageText} · ${truncateText(hitHint, 40)}` : pageText}</div>
+          <div className="snippet-summary-label">页码 / 关键词</div>
+          <div className="snippet-summary-value">{hitHint ? `${pageText || '文本命中'} · ${truncateText(hitHint, 40)}` : (pageText || '未标记')}</div>
         </div>
       </div>
       <div className="snippet-panel">
         {excerpt.length === 0 && (
-          <div className="text-sm text-slate-500">当前没有可展示的原文片段。</div>
+          <div className="text-sm text-slate-500">这里暂时没有可展示的原文片段。</div>
         )}
         {excerpt.map((line, index) => (
           <div
@@ -768,7 +778,7 @@ function SourceSnippetPanel({ snippetLoading, sourceSnippet }) {
 
 function MarkdownAnswer({ content }) {
   if (!content) {
-    return <p>这里将显示围绕当前论文审查结果生成的解释、优先级建议与答辩式说明。</p>;
+    return <p>这里会显示围绕当前检查结果生成的原因说明、修改顺序建议和依据整理。</p>;
   }
 
   const blocks = parseMarkdownBlocks(content);
@@ -864,7 +874,7 @@ function buildNavigatorItems(evidenceRecords, formatIssues, referenceIssues) {
     kind: 'evidence',
     id: record.evidence_id,
     title: record.claim || '未命名 evidence',
-    meta: `${record.stage || '-'} · ${formatLocation(record.location)}`,
+    meta: [record.stage || '-', formatLocation(record.location, '')].filter(Boolean).join(' · '),
     severity: record.severity || 'info',
   }));
 
@@ -889,7 +899,7 @@ function extractFormatIssues(review) {
       title: issue.description || issue.type || '未命名格式问题',
       type: issue.type || 'format',
       severity: issue.severity || 'info',
-      locator: formatLocation(issue),
+      locator: formatLocation(issue, '-'),
       suggestion: issue.suggestion || '按模板要求修订',
       evidenceId: issue.evidence_id || findEvidenceId(review, issue.description, issue.location),
     }));
@@ -904,7 +914,7 @@ function extractReferenceIssues(review) {
       title: issue.description || issue.type || '未命名文献问题',
       type: issue.type || 'reference',
       severity: issue.severity || 'info',
-      locator: formatLocation(issue),
+      locator: formatLocation(issue, '-'),
       suggestion: issue.suggestion || '补充文献定位与核验信息',
       evidenceId: issue.evidence_id || findEvidenceId(review, issue.description, issue.location),
     }));
@@ -1200,10 +1210,10 @@ function statusPillClass(status) {
   return 'pill-pending';
 }
 
-function formatLocation(location) {
-  if (!location) return '未提供定位信息';
+function formatLocation(location, fallback = '未提供定位信息') {
+  if (!location) return fallback;
   if (typeof location === 'string') return truncateText(location, 60);
-  if (typeof location !== 'object') return '未提供定位信息';
+  if (typeof location !== 'object') return fallback;
   const fields = [];
   if (location.page) fields.push(`第 ${location.page} 页`);
   if (location.line) fields.push(`行 ${location.line}`);
@@ -1212,7 +1222,7 @@ function formatLocation(location) {
   if (location.anchor_id) fields.push(`锚点 ${location.anchor_id}`);
   if (!fields.length && location.locator) fields.push(truncateText(location.locator, 48));
   if (fields.length) return fields.join(' · ');
-  return '未提供定位信息';
+  return fallback;
 }
 
 function simplifyStage(stage) {

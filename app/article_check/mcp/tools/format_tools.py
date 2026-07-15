@@ -91,6 +91,60 @@ def _resolve_expected_sections(expected_sections: Optional[List[str]], review_tr
     ]
 
 
+def _detect_cover_presence(path: Path, file_type: str) -> str:
+    """返回 present / uncertain / missing。"""
+    try:
+        if file_type == "docx":
+            from docx import Document
+
+            doc = Document(str(path))
+            lines: List[str] = []
+            for para in doc.paragraphs[:24]:
+                text = para.text.strip()
+                if text:
+                    lines.append(text)
+                if para._element.xpath('.//*[local-name()="br" and @*[local-name()="type"]="page"]'):
+                    break
+            for table in doc.tables[:2]:
+                for row in table.rows:
+                    row_text = " ".join(" ".join(p.text.strip() for p in cell.paragraphs if p.text and p.text.strip()) for cell in row.cells).strip()
+                    if row_text:
+                        lines.append(row_text)
+            joined = "\n".join(lines)
+        elif file_type == "pdf":
+            try:
+                import fitz
+                with fitz.open(str(path)) as doc:
+                    joined = doc.load_page(0).get_text("text") if doc.page_count else ""
+            except Exception:
+                joined = extract_text_from_pdf(path).split("\f")[0]
+        else:
+            joined = _load_text_for_structure(path, file_type)
+    except Exception:
+        joined = _load_text_for_structure(path, file_type)
+
+    normalized = _normalize_text(joined)
+    if any(marker in normalized for marker in ["诚信承诺书", "论文使用授权说明"]):
+        return "uncertain"
+
+    title_hits = len(re.findall(r"[\u4e00-\u9fff]{4,}", joined))
+    field_hits = sum(
+        1 for marker in ["大学", "学院", "论文", "作者", "姓名", "学号", "指导教师", "导师", "专业"]
+        if marker in joined
+    )
+    if field_hits >= 3 and title_hits >= 2:
+        return "present"
+    if field_hits >= 2:
+        return "uncertain"
+    return "missing"
+
+
+def _detect_statement_presence(normalized_text: str) -> bool:
+    return any(marker in normalized_text for marker in [
+        "诚信承诺书", "论文使用授权说明", "原创性声明", "使用授权说明", "版权声明",
+    ])
+
+
 def check_latex_format(
     file_path: str,
     rules_filter: Optional[List[int]] = None,
@@ -168,7 +222,20 @@ def check_structure(
 
     found = []
     missing = []
+    cover_state = _detect_cover_presence(path, detected_type) if "cover" in sections else "missing"
     for sec in sections:
+        if sec == "cover":
+            if cover_state == "present":
+                found.append(sec)
+                continue
+            if cover_state == "uncertain":
+                found.append(f"{sec}:manual_check")
+                continue
+            missing.append(sec)
+            continue
+        if sec in {"copyright", "title_page"} and _detect_statement_presence(normalized_text):
+            found.append(sec)
+            continue
         if _matches_section(sec, normalized_text):
             found.append(sec)
         else:
@@ -176,14 +243,29 @@ def check_structure(
 
     return {
         "issues": [
-            {
-                "type": "missing_section",
-                "severity": "major" if s in ["abstract", "reference", "cover", "title_page", "copyright"] else "minor",
-                "section": s,
-                "description": f"缺少 '{s}' 章节",
-                "suggestion": f"请补充 {s} 相关内容并显式设置章节标题",
-            }
-            for s in missing
+            *(
+                [
+                    {
+                        "type": "cover_manual_confirmation",
+                        "severity": "minor",
+                        "section": "cover",
+                        "description": "首页疑似为封面，但自动识别不够稳定，需人工确认。",
+                        "suggestion": "请人工确认第一页是否为封面，并检查题名、作者、导师等字段是否完整。",
+                    }
+                ]
+                if cover_state == "uncertain"
+                else []
+            ),
+            *[
+                {
+                    "type": "missing_section",
+                    "severity": "major" if s in ["abstract", "reference", "cover", "title_page", "copyright"] else "minor",
+                    "section": s,
+                    "description": f"缺少 '{s}' 章节",
+                    "suggestion": f"请补充 {s} 相关内容并显式设置章节标题",
+                }
+                for s in missing
+            ],
         ],
         "found_sections": found,
         "missing_sections": missing,

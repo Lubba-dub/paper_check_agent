@@ -130,6 +130,18 @@ workflow:
           required: false
           type: paragraph
           variable: section_digest_json
+        - label: component_map_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: component_map_json
+        - label: font_profile_json
+          max_length: null
+          options: []
+          required: false
+          type: paragraph
+          variable: font_profile_json
         - label: evidence_index_json
           max_length: null
           options: []
@@ -201,10 +213,17 @@ workflow:
 
             判断原则：
             1. layout_metrics、style_metrics、page_metrics 等确定性指标优先作为强证据。
-            2. 章节缺失、标题层级异常、摘要不规范、图表说明不充分、目录不完整等属于语义格式问题。
-            3. 不要虚构页码、行号、字号、边距或模板规则。
-            4. 如果 review_focus 不为空，需要优先覆盖相关区域。
-            5. 只输出 JSON，不要输出解释。
+            2. 在判断格式问题前，必须先利用 component_map_json 或 evidence_index_json 识别封面、声明页、摘要、关键词、目录、正文、参考文献的边界。
+            3. 如果 component_map_json 与确定性规则冲突，优先输出“需人工确认”，而不是直接给缺失结论。
+            4. 章节缺失、标题层级异常、摘要不规范、图表说明不充分、目录不完整等属于语义格式问题。
+            5. 对封面的判断不能依赖“封面”标题字样，也不能要求内部字段名必须叫 cover。
+            6. 声明页（如“诚信承诺书”“论文使用授权说明”）必须单独审查，不得把其中的“本人承诺”“学生签名”等字段当成封面字段。
+            7. 摘要长度统计只能覆盖摘要正文到关键词之前，不能混入题名、英文摘要、目录和正文。
+            8. 参考文献相关判断只能基于 references 部件，不得把正文中的编号引用误当作文献条目。
+            9. 如果 font_profile_json 提供了部件字体摘要，可以把它作为字体异常判断的辅助证据，但不要虚构不存在的字体值。
+            10. 不要虚构页码、行号、字号、边距或模板规则。
+            11. 如果 review_focus 不为空，需要优先覆盖相关区域。
+            12. 只输出 JSON，不要输出解释。
 
             当 detailed_mode=False 时，输出 JSON 顶层字段必须包含：
             - score
@@ -270,6 +289,12 @@ workflow:
 
             section_digest_json:
             {{#1719002001001.section_digest_json#}}
+
+            component_map_json:
+            {{#1719002001001.component_map_json#}}
+
+            font_profile_json:
+            {{#1719002001001.font_profile_json#}}
 
             evidence_index_json:
             {{#1719002001001.evidence_index_json#}}
